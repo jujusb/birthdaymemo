@@ -1,0 +1,160 @@
+:root {
+  --color-bg: #f5f7fa;
+  --color-bg-elevated: #ffffff;
+  --color-bg-sunken: #eef1f6;
+  --color-bg-hover: #e6ebf2;
+  --color-border: #d8dee8;
+  --color-text: #2c3e50;
+  --color-text-muted: #6c7a89;
+  --color-primary: #4A90D9;
+  --color-primary-hover: #3a7bc8;
+  --color-danger: #e74c3c;
+  --color-success: #27ae60;
+  --color-warning: #f39c12;
+  --color-male: #4A90D9;
+  --color-female: #E91E63;
+  --color-gender-none: #9E9E9E;
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.05);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.08);
+  --radius: 8px;
+  --radius-sm: 4px;
+}
+
+[data-theme='dark'] {
+  --color-bg: #1a1d23;
+  --color-bg-elevated: #252932;
+  --color-bg-sunken: #14171c;
+  --color-bg-hover: #2d323d;
+  --color-border: #3a3f4a;
+  --color-text: #e4e7eb;
+  --color-text-muted: #9ba3af;
+  --color-primary: #5fa8e8;
+  --color-primary-hover: #6fb3f0;
+  --color-danger: #e74c3c;
+  --color-success: #2ecc71;
+  --color-warning: #f1c40f;
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.4);
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+/* 全局隐藏滚动条（保留滚动功能：滚轮/拖拽） */
+* {
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* IE/Edge */
+}
+*::-webkit-scrollbar {
+  display: none; /* Chrome/Safari/WebKit */
+  width: 0;
+  height: 0;
+}
+
+html, body, #app {
+  height: 100%;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC',
+    'Microsoft YaHei', sans-serif;
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-size: 14px;
+  -webkit-font-smoothing: antialiased;
+}
+
+a { color: var(--color-primary); text-decoration: none; }
+a:hover { color: var(--color-primary-hover); }
+
+button {
+  font-family: inherit;
+  font-size: 14px;
+  padding: 6px 14px;
+  border: 1px solid var(--color-border);
+  background: var(--color-bg-elevated);
+  color: var(--color-text);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+button:hover { border-color: var(--color-primary); }
+button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+button.primary {
+  background: var(--color-primary);
+  color: white;
+  border-color: var(--color-primary);
+}
+button.primary:hover { background: var(--color-primary-hover); }
+
+button.danger { color: var(--color-danger); border-color: var(--color-danger); }
+button.danger:hover { background: var(--color-danger); color: white; }
+
+input, select, textarea {
+  font-family: inherit;
+  font-size: 14px;
+  padding: 6px 10px;
+  border: 1px solid var(--color-border);
+  background: var(--color-bg-elevated);
+  color: var(--color-text);
+  border-radius: var(--radius-sm);
+  width: 100%;
+  outline: none;
+  transition: border-color 0.15s ease;
+}
+input:focus, select:focus, textarea:focus { border-color: var(--color-primary); }
+
+label { display: block; margin-bottom: 4px; color: var(--color-text-muted); font-size: 13px; }
+
+.card {
+  background: var(--color-bg-elevated);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-sm);
+  padding: 16px;
+}
+
+.row { display: flex; gap: 12px; align-items: center; }
+.col { display: flex; flex-direction: column; gap: 8px; }
+.between { justify-content: space-between; }
+.grow { flex: 1; }
+.mt-8 { margin-top: 8px; } .mt-16 { margin-top: 16px; } .mt-24 { margin-top: 24px; }
+.mb-8 { margin-bottom: 8px; } .mb-16 { margin-bottom: 16px;; }
+.gap-8 { gap: 8px; } .gap-16 { gap: 16px; }
+
+.modal-backdrop {
+  position: fixed; inset: 0; background: rgba(0, 0, 0, 0.4);
+  display: flex; align-items: center; justify-content: center; z-index: 100;
+}
+.modal {
+  background: var(--color-bg-elevated);
+  border-radius: var(--radius);
+  padding: 24px;
+  min-width: 360px;
+  max-width: 90vw;
+  max-height: 90vh;
+  overflow: auto;
+  box-shadow: var(--shadow-md);
+}
+
+/* 移动端：移除 min-width，避免横向溢出 */
+@media (max-width: 480px) {
+  .modal {
+    min-width: unset;
+    width: calc(100vw - 24px);
+    max-width: calc(100vw - 24px);
+    padding: 16px;
+  }
+}
+
+.tag-dot {
+  display: inline-block;
+  width: 10px; height: 10px;
+  border-radius: 50%;
+  margin-right: 6px;
+  vertical-align: middle;
+}
+
+table { width: 100%; border-collapse: collapse; }
+th, td { padding: 8px 12px; text-align: left; border-bottom: 1px solid var(--color-border); }
+th { font-weight: 600; color: var(--color-text-muted); background: var(--color-bg-sunken); }
