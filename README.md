@@ -1,4 +1,4 @@
-# ImageShare
+# BirthDayMemo
 
 [中文](#中文文档) | [English](#english-doc)
 
@@ -6,64 +6,66 @@
 
 # 中文文档
 
-轻量级自建图床系统，支持管理员后台、用户图库、游客分享上传。单文件部署，零依赖。
+自托管生日提醒应用，支持日历视图、标签管理、PDF 导出与邮件提醒。单二进制部署，零外部依赖。
 
 ## 功能特性
 
 - **单文件部署** - Go 编译的可执行文件内嵌前端，无需额外依赖
-- **管理后台** - 图片管理、用户管理、游客链接管理、系统日志
-- **用户系统** - 独立图库，支持存储空间和图片数量配额
-- **游客上传** - 可分享的上传链接，支持过期时间和上传次数限制
-- **图片直链** - 通过 `/i/{code}` 访问图片，不暴露真实路径
-- **安全防护** - JWT 认证、bcrypt 密码加密、上传校验（扩展名+MIME）、限流、XSS/SQL 注入防护
-- **自动刷新** - 仅当前页面 5 秒轮询，不分页模式滚动加载
-- **格式支持** - JPG、JPEG、PNG、GIF、WebP
-- **配置文件** - 支持 `//` 注释的 JSON 配置
-- **日志系统** - 自动轮转、保留数量控制、ANSI 彩色控制台输出
+- **日历视图** - 月视图/年视图切换，直观展示生日分布
+- **标签管理** - 自定义标签与颜色，按标签筛选生日
+- **PDF 导出** - 横版 A4 日历，支持自定义背景、表格特效、5 种预设字体
+- **邮件提醒** - SMTP 邮件发送，支持自定义模板与变量替换
+- **多用户系统** - 管理员/普通用户角色分离，数据完全隔离
+- **安全防护** - bcrypt 密码加密、图形验证码、IP 登录限流、操作审计日志
+- **多语言** - 内置中英双语，支持管理员扩展语言包
+- **主题切换** - 深色/浅色模式，10 种预设主题色
+- **配置文件** - 支持 `//` 注释的 JSON 配置，首次运行交互式配置向导
 
 ## 快速开始
 
 ### Windows
 
-1. 下载 `imageshare-windows-amd64.exe`
+1. 下载 `birthdaymemo-windows-amd64.exe`
 2. 命令行运行：
    ```cmd
-   imageshare-windows-amd64.exe
+   birthdaymemo-windows-amd64.exe
    ```
-3. 首次启动自动创建 `config.json`、`database/`、`uploads/`、`logs/`
-4. 浏览器打开 `http://localhost:8080`
+3. 首次启动进入交互式配置向导（语言、监听地址、端口、管理员账号）
+4. 配置完成后自动生成 `config.json` 和 `birthdaymemo.db`
+5. 浏览器打开 `http://localhost:<端口>`
 
 ### Linux
 
 1. 下载对应架构的二进制文件：
-   - x86_64 服务器：`imageshare-linux-amd64`
-   - ARM64 服务器：`imageshare-linux-arm64`
+   - x86_64 服务器：`birthdaymemo-linux-amd64`
+   - ARM64 服务器：`birthdaymemo-linux-arm64`
 
 2. 添加执行权限并运行：
    ```bash
-   chmod +x imageshare-linux-amd64
-   ./imageshare-linux-amd64
+   chmod +x birthdaymemo-linux-amd64
+   ./birthdaymemo-linux-amd64
    ```
 
-3. 首次启动自动创建 `config.json`、`database/`、`uploads/`、`logs/`
-4. 浏览器打开 `http://localhost:8080`
+3. 首次启动进入交互式配置向导
+4. 配置完成后自动生成 `config.json` 和 `birthdaymemo.db`
+5. 浏览器打开 `http://localhost:<端口>`
 
 ### 后台运行（Linux）
 
 ```bash
 # 使用 nohup
-nohup ./imageshare-linux-amd64 > /dev/null 2>&1 &
+nohup ./birthdaymemo-linux-amd64 > /dev/null 2>&1 &
 
 # 或使用 systemd（推荐）
-sudo tee /etc/systemd/system/imageshare.service << 'EOF'
+sudo tee /etc/systemd/system/birthdaymemo.service << 'EOF'
 [Unit]
-Description=ImageShare
+Description=BirthDayMemo
 After=network.target
 
 [Service]
 Type=simple
-WorkingDirectory=/opt/imageshare
-ExecStart=/opt/imageshare/imageshare-linux-amd64
+WorkingDirectory=/opt/birthdaymemo
+ExecStart=/opt/birthdaymemo/birthdaymemo-linux-amd64
 Restart=on-failure
 
 [Install]
@@ -71,90 +73,75 @@ WantedBy=multi-user.target
 EOF
 
 sudo systemctl daemon-reload
-sudo systemctl enable imageshare
-sudo systemctl start imageshare
+sudo systemctl enable birthdaymemo
+sudo systemctl start birthdaymemo
 ```
 
-### 默认管理员
-
-```
-用户名：admin
-密码：image123456
-```
-
-首次登录后强制修改密码。
-
-### 命令行修改管理员密码
+### 命令行重置管理员密码
 
 ```bash
 # Windows
-imageshare.exe -changepasswd <新密码>
+birthdaymemo.exe -reset-admin-password
 ```
 ```bash
 # Linux
-./imageshare-linux-amd64 -changepasswd <新密码>
+./birthdaymemo-linux-amd64 -reset-admin-password
 ```
+
+运行后进入交互式引导，按提示输入新密码即可。
 
 ## 配置说明
 
-编辑 `config.json`（支持 `//` 注释）：
+首次运行通过交互式向导生成 `config.json`（支持 `//` 注释）：
 
 ```json
 {
     "server": {
         "host": "0.0.0.0",
-        "port": 8080
+        "port": 12345
     },
-    "jwt_secret": "your-random-secret",
-    "upload_path": "./uploads",
-    "default_user_storage_limit_mb": 100,
-    "default_user_image_limit": 50,
-    "default_user_single_image_limit_mb": 10,
-    "log_retention": 7
+    "language": "zh",
+    "log_retention_days": 14
 }
 ```
 
 | 字段 | 默认值 | 说明 |
 |------|--------|------|
 | `server.host` | `0.0.0.0` | 监听地址。`0.0.0.0` 监听所有网卡，`127.0.0.1` 仅本机访问 |
-| `server.port` | `8080` | 监听端口 |
-| `jwt_secret` | `image_share_secret_key_2024` | JWT 签名密钥，请修改为随机字符串 |
-| `upload_path` | `./uploads` | 图片存储路径，相对可执行文件目录或绝对路径 |
-| `default_user_storage_limit_mb` | `100` | 新用户默认存储配额（MB） |
-| `default_user_image_limit` | `50` | 新用户默认图片数量上限 |
-| `default_user_single_image_limit_mb` | `10` | 新用户默认单张图片大小上限（MB） |
-| `log_retention` | `7` | 日志文件保留数量 |
+| `server.port` | 随机 10000+ | 监听端口 |
+| `language` | `zh` | 控制台语言（zh/en） |
+| `log_retention_days` | `14` | 日志文件保留天数，0 为永久保留 |
+
+SMTP 配置和 PDF 设置通过管理员后台页面配置，存储在数据库中。
 
 ## 使用指南
 
 ### 管理员
 
-登录后可使用：
+登录后台可使用：
 
-- **仪表盘** - 查看图片总数、用户数、游客任务数、存储占用
-- **图片管理** - 浏览、预览、复制链接、删除图片，支持分页或滚动加载
-- **用户管理** - 创建/编辑/删除用户，设置配额，重置密码
-- **游客链接** - 创建可分享的上传链接，设置过期时间和上传次数
-- **系统日志** - 查看操作日志，自动刷新
+- **用户管理** - 创建/编辑/删除用户，重置密码
+- **系统配置** - 监听地址/端口、日志保留天数
+- **SMTP 设置** - 配置邮件服务器，支持连接测试
+- **邮件模板** - 自定义提醒邮件内容，支持变量替换（`{user}`、`{name}`、`{age}` 等）
+- **操作日志** - 查看审计日志，支持搜索与日志文件下载
 
 ### 普通用户
 
-管理员创建用户账号后，用户可：
+管理员创建账号后，用户可：
 
-- 上传图片（在配额内）
-- 查看自己的图库
-- 复制图片直链
-- 删除自己的图片
+- **日历视图** - 月视图/年视图查看生日分布，按标签筛选
+- **生日管理** - 添加/编辑/删除生日，设置姓名、性别、日期、标签
+- **标签管理** - 创建自定义标签与颜色
+- **PDF 导出** - 自定义背景、表格特效、字体，导出横版 A4 日历
+- **个人设置** - 修改密码、语言、主题、提醒方式
 
-### 游客
+### 提醒功能
 
-通过分享链接访问上传页面：
+用户可配置两种提醒方式：
 
-```
-http://your-domain.com/upload/{code}
-```
-
-无需登录，受链接过期时间和上传次数限制。
+- **到期提醒** - 生日前 N 天发送邮件（默认 3 天），支持设置提醒时间
+- **定期汇总** - 每周/每月固定时间发送未来一段时间的生日汇总
 
 ## API 接口
 
@@ -162,97 +149,58 @@ http://your-domain.com/upload/{code}
 
 | 方法 | 路径 | 认证 | 说明 |
 |------|------|------|------|
-| `POST` | `/api/auth/login` | 否 | 登录。Body: `{username, password}` |
+| `POST` | `/api/auth/login` | 否 | 登录。Body: `{username, password, captcha_id?, captcha_answer?}` |
 | `POST` | `/api/auth/logout` | 是 | 登出 |
-| `GET` | `/api/auth/verify` | 是 | 验证 Token |
-| `PUT` | `/api/profile/password` | 是 | 修改密码。Body: `{old_password, new_password}` |
+| `GET` | `/api/auth/me` | 是 | 获取当前用户信息 |
+| `GET` | `/api/captcha` | 否 | 获取验证码图片与 ID |
+| `PUT` | `/api/auth/password` | 是 | 修改密码 |
+
+### 生日管理
+
+| 方法 | 路径 | 认证 | 说明 |
+|------|------|------|------|
+| `GET` | `/api/birthdays` | 是 | 获取生日列表。Params: `tag_id` |
+| `POST` | `/api/birthdays` | 是 | 添加生日。Body: `{name, gender, birth_date, tag_ids}` |
+| `PUT` | `/api/birthdays/:id` | 是 | 更新生日 |
+| `DELETE` | `/api/birthdays/:id` | 是 | 删除生日 |
+
+### 标签管理
+
+| 方法 | 路径 | 认证 | 说明 |
+|------|------|------|------|
+| `GET` | `/api/tags` | 是 | 获取标签列表 |
+| `POST` | `/api/tags` | 是 | 创建标签。Body: `{name, color}` |
+| `PUT` | `/api/tags/:id` | 是 | 更新标签 |
+| `DELETE` | `/api/tags/:id` | 是 | 删除标签 |
+
+### PDF 导出
+
+| 方法 | 路径 | 认证 | 说明 |
+|------|------|------|------|
+| `POST` | `/api/pdf/preview` | 是 | 预览 PDF。Body: `{range, setting, resources}` |
+| `POST` | `/api/pdf/export` | 是 | 导出 PDF |
+| `GET` | `/api/pdf/settings` | 是 | 获取 PDF 设置 |
+| `PUT` | `/api/pdf/settings` | 是 | 更新 PDF 设置 |
 
 ### 管理员接口
 
-所有管理员接口需要 JWT Token 且角色为 admin。
-
-**用户管理**
-
-| 方法 | 路径 | 说明 |
-|------|------|------|
-| `POST` | `/api/admin/users` | 创建用户。Body: `{username, password, storage_limit_mb, image_limit, single_image_limit_mb}` |
-| `GET` | `/api/admin/users` | 用户列表。Params: `page`, `page_size`, `offset`, `limit` |
-| `GET` | `/api/admin/users/:id` | 获取用户 |
-| `PUT` | `/api/admin/users/:id` | 更新用户。Body: `{storage_limit_mb, image_limit, single_image_limit_mb}` |
-| `PUT` | `/api/admin/users/:id/password` | 重置密码。Body: `{new_password}` |
-| `DELETE` | `/api/admin/users/:id` | 删除用户 |
-
-**游客任务**
-
-| 方法 | 路径 | 说明 |
-|------|------|------|
-| `POST` | `/api/admin/tasks` | 创建任务。Body: `{max_count, expire_days}` |
-| `GET` | `/api/admin/tasks` | 任务列表。Params: `page`, `page_size`, `offset`, `limit` |
-| `GET` | `/api/admin/tasks/:id` | 获取任务 |
-| `PUT` | `/api/admin/tasks/:id` | 更新任务。Body: `{max_count, expire_days}` |
-| `DELETE` | `/api/admin/tasks/:id` | 删除任务。Params: `delete_files` |
-
-**图片**
-
-| 方法 | 路径 | 说明 |
-|------|------|------|
-| `POST` | `/api/admin/upload` | 上传图片。`multipart/form-data`，字段: `file` |
-| `GET` | `/api/admin/images` | 图片列表。Params: `page`, `page_size`, `offset`, `limit` |
-| `DELETE` | `/api/admin/images/:id` | 删除图片 |
-
-**其他**
-
-| 方法 | 路径 | 说明 |
-|------|------|------|
-| `GET` | `/api/admin/stats` | 仪表盘统计 |
-| `GET` | `/api/admin/logs` | 系统日志。Params: `file` |
-
-### 用户接口
-
-所有用户接口需要 JWT Token。
-
-| 方法 | 路径 | 说明 |
-|------|------|------|
-| `POST` | `/api/user/upload` | 上传图片。`multipart/form-data`，字段: `file` |
-| `GET` | `/api/user/images` | 我的图片。Params: `page`, `page_size`, `offset`, `limit` |
-| `DELETE` | `/api/user/images/:id` | 删除图片 |
-| `GET` | `/api/user/stats` | 存储统计 |
-
-### 游客接口
-
-| 方法 | 路径 | 说明 |
-|------|------|------|
-| `POST` | `/api/upload/:code` | 游客上传。`multipart/form-data`，字段: `file` |
-| `GET` | `/api/upload/:code` | 检查链接状态 |
-| `GET` | `/api/guest/:code` | 获取链接信息（无需认证） |
-
-### 公开接口
-
-| 方法 | 路径 | 说明 |
-|------|------|------|
-| `GET` | `/i/:code` | 图片直链访问 |
-
-### 分页参数
-
-列表接口支持两种模式：
-
-**分页模式**（仅加载当前页）：
-```
-?page=1&page_size=20
-```
-
-**滚动模式**（批量加载）：
-```
-?offset=0&limit=30
-```
-
-响应格式：
-```json
-{
-    "data": [...],
-    "total": 100
-}
-```
+| 方法 | 路径 | 认证 | 说明 |
+|------|------|------|------|
+| `GET` | `/api/admin/users` | 管理员 | 用户列表 |
+| `POST` | `/api/admin/users` | 管理员 | 创建用户 |
+| `PUT` | `/api/admin/users/:id` | 管理员 | 更新用户 |
+| `DELETE` | `/api/admin/users/:id` | 管理员 | 删除用户 |
+| `PUT` | `/api/admin/users/:id/password` | 管理员 | 重置密码 |
+| `GET` | `/api/admin/settings` | 管理员 | 获取系统配置 |
+| `PUT` | `/api/admin/settings` | 管理员 | 更新系统配置 |
+| `GET` | `/api/admin/smtp` | 管理员 | 获取 SMTP 配置 |
+| `PUT` | `/api/admin/smtp` | 管理员 | 更新 SMTP 配置 |
+| `POST` | `/api/admin/smtp/test` | 管理员 | 测试 SMTP 连接 |
+| `GET` | `/api/admin/email-template` | 管理员 | 获取邮件模板 |
+| `PUT` | `/api/admin/email-template` | 管理员 | 更新邮件模板 |
+| `GET` | `/api/admin/logs` | 管理员 | 操作日志列表 |
+| `GET` | `/api/admin/logs/files` | 管理员 | 日志文件列表 |
+| `GET` | `/api/admin/logs/files/:filename` | 管理员 | 下载日志文件 |
 
 ## 从源码构建
 
@@ -261,80 +209,135 @@ http://your-domain.com/upload/{code}
 - Go 1.24+
 - Node.js 18+
 
-### 构建
+### 字体文件说明
 
-可以优先使用**build.bat**构建
-**clean.bat**是用来清理残留的（编译中下载的一些东西）
+源代码默认使用以下 5 款字体：
+
+| 字体名称 | 授权类型 | 下载链接 |
+|----------|----------|----------|
+| **思源黑体** (Noto Sans SC) | 免费可商用（开源字体） | 推荐从官方 GitHub 或 [Google Fonts](https://fonts.google.com/noto) 下载，确保获取最新版。 |
+| **站酷小薇** (ZCOOL XiaoWei) | 免费可商用（站酷公益字体） | 站酷网官方专题页、[字加网](https://www.zijia.com.cn/) 等平台。 |
+| **站酷快乐** (ZCOOL KuaiLe) | 免费可商用（站酷公益字体） | 站酷网官方专题页、[字加网](https://www.zijia.com.cn/) 等平台。 |
+| **马善政** (Ma Shan Zheng) | 免费可商用（SIL OFL 开源协议） | Google Fonts、GitHub 等开源字体平台。部分下载站标注"商用须授权"，建议认准开源渠道。 |
+| **龙藏** (Long Cang) | 免费可商用（寒蝉字库免费授权） | [字加网](https://www.zijia.com.cn/)、寒蝉字库官方渠道。部分下载站信息混乱，建议优先使用官方来源。 |
+
+下载后将文件名改为以下对应名称，放入 `internal/pdfexport/fonts/` 目录即可：
+
+| 预设名称 | 文件名 | 风格说明 |
+|----------|--------|----------|
+| 思源黑体 | `NotoSansSC.ttf` | 现代无衬线 |
+| 站酷小薇 | `ZCOOLXiaoWei.ttf` | 细衬线 |
+| 站酷快乐 | `ZCOOLKuaiLe.ttf` | 圆润活泼 |
+| 马善政 | `MaShanZheng.ttf` | 毛笔行书 |
+| 龙藏 | `LongCang.ttf` | 硬笔行楷 |
+
+如果您不想使用上述默认字体，可自行挑选喜欢的 TTF 字体文件，放入 `internal/pdfexport/fonts/` 目录，并修改 `internal/pdfexport/fonts.go` 中的文件名映射和预设列表。
+
+**提示：** 您可以将 `internal/pdfexport/fonts.go` 文件发给 AI，并说明：
+
+> "我只有 'XX' 字体文件，文件名为 'XX.ttf'（可准备多个），请帮我删去原来的，并替换为这几个字体文件。"
+
+AI 会自动帮您修改 `fonts.go` 中的文件名映射和预设列表。
+
+### 使用构建工具（推荐）
+
+项目自带 `build-tool.bat` 一键编译脚本（Windows），双击运行后选择目标平台即可自动完成前端构建和后端编译：
+
+```
+请选择编译目标:
+
+  1 - Windows x64
+  2 - Windows ARM64
+  3 - Linux x64
+  4 - Linux ARM64
+  5 - macOS x64 (Intel)
+  6 - macOS ARM64 (Apple Silicon)
+  7 - 全部平台
+```
+
+编译产物输出到 `BDM\` 目录。
+
+### 手动构建步骤
 
 ```bash
-# 1. 构建前端
+# 1. 安装前端依赖
 cd frontend
 npm install
-npm run build
+
+# 2. 编译（以 Linux amd64 为例）
+# 构建前端 + 编译后端（CGO_ENABLED=0 纯静态编译）
 cd ..
+cd frontend && npm run build && cd ..
+CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o BDM/birthdaymemo-linux-amd64 .
+```
 
-# 2. 复制前端到后端嵌入目录
-# Windows PowerShell:
-Remove-Item -Recurse -Force backend\cmd\frontend
-Copy-Item -Recurse frontend\dist backend\cmd\frontend
-Remove-Item -Recurse -Force backend\frontend
-Copy-Item -Recurse frontend\dist backend\frontend
+各平台编译命令：
 
-# Linux/macOS:
-rm -rf backend/cmd/frontend && cp -r frontend/dist backend/cmd/frontend
-rm -rf backend/frontend && cp -r frontend/dist backend/frontend
+```bash
+# Windows x64
+set CGO_ENABLED=0 && set GOOS=windows && set GOARCH=amd64 && go build -o BDM\birthdaymemo-windows-amd64.exe .
 
-# 3. 编译后端
-cd backend
+# Windows ARM64
+set CGO_ENABLED=0 && set GOOS=windows && set GOARCH=arm64 && go build -o BDM\birthdaymemo-windows-arm64.exe .
 
-# Windows amd64:
-GOOS=windows GOARCH=amd64 go build -o ../../build/imageshare-windows-amd64.exe ./cmd/
+# Linux x64
+CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o BDM/birthdaymemo-linux-amd64 .
 
-# Linux amd64:
-GOOS=linux GOARCH=amd64 go build -o ../../build/imageshare-linux-amd64 ./cmd/
+# Linux ARM64
+CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -o BDM/birthdaymemo-linux-arm64 .
 
-# Linux arm64:
-GOOS=linux GOARCH=arm64 go build -o ../../build/imageshare-linux-arm64 ./cmd/
+# macOS x64 (Intel)
+CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build -o BDM/birthdaymemo-macos-amd64 .
+
+# macOS ARM64 (Apple Silicon)
+CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -o BDM/birthdaymemo-macos-arm64 .
 ```
 
 ## 技术栈
 
-**后端：** Go、Gin、GORM、SQLite、JWT、bcrypt
+**后端：** Go、Chi、GORM、SQLite、bcrypt、fpdf
 
-**前端：** Vue 3、TypeScript、Vite、Element Plus、Pinia、Axios
+**前端：** Vue 3、TypeScript、Vite、Pinia、Vue Router
 
 ## 项目结构
 
 ```
 .
-├── backend/
-│   ├── cmd/
-│   │   ├── main.go          # 入口 & 路由
-│   │   └── frontend/        # 内嵌前端 (go:embed)
-│   ├── config/              # 配置
-│   └── internal/
-│       ├── controller/      # HTTP 处理器
-│       ├── service/         # 业务逻辑
-│       ├── repository/      # 数据访问
-│       ├── models/          # 数据模型
-│       ├── middleware/       # JWT、限流
-│       └── logger/          # 日志系统
+├── main.go                  # 入口
+├── frontend_dist/           # 内嵌前端 (go:embed)
+├── internal/
+│   ├── auth/                # 认证与会话管理
+│   ├── config/              # 配置加载
+│   ├── console/             # 交互式配置向导
+│   ├── database/            # 数据库初始化
+│   ├── email/               # SMTP 邮件发送
+│   ├── i18n/                # 多语言支持
+│   ├── logger/              # 日志系统
+│   ├── models/              # 数据模型
+│   ├── pdfexport/           # PDF 导出引擎
+│   │   └── fonts/           # 字体文件（需自行准备）
+│   ├── reminder/            # 提醒调度器
+│   ├── security/            # 登录限流
+│   └── web/                 # HTTP 处理器与中间件
 └── frontend/
     └── src/
-        ├── views/           # Vue 组件
+        ├── views/           # Vue 页面组件
+        ├── components/      # 通用组件
         ├── router/          # Vue Router
-        ├── stores/          # Pinia 状态
-        └── utils/           # Axios 实例
+        ├── stores/          # Pinia 状态管理
+        ├── api/             # API 客户端
+        ├── locales/         # 语言包
+        └── styles/          # 样式文件
 ```
 
 ## 开源协议
 
-本项目基于 **GNU Affero General Public License v3.0** 开源。
+本项目基于 **Apache License 2.0** 开源。
 
 - 你可以自由使用、修改和分发本软件
-- 修改后的版本必须以相同协议开源
-- 必须保留原作者版权声明
-- 网络服务使用也必须公开源码（AGPL 特有条款）
+- 允许商业使用，但**本项目明确禁止用于任何商业用途**
+- 必须保留原作者版权声明和许可证文本
+- 修改的文件需标注变更说明
 
 详见 [LICENSE](LICENSE)。
 
@@ -342,64 +345,66 @@ GOOS=linux GOARCH=arm64 go build -o ../../build/imageshare-linux-arm64 ./cmd/
 
 # English Doc
 
-A lightweight, self-hosted image hosting system with admin management, user galleries, and guest upload sharing. Single binary deployment, zero dependencies.
+A self-hosted birthday reminder application with calendar views, tag management, PDF export, and email notifications. Single binary deployment, zero external dependencies.
 
 ## Features
 
 - **Single Binary Deployment** - Go compiled executable with embedded frontend, no extra dependencies needed
-- **Admin Dashboard** - Image management, user management, guest link management, system logs
-- **User System** - Independent galleries with storage/image count quotas
-- **Guest Upload** - Shareable links with expiration time and upload count limits
-- **Image Direct Link** - Access images via `/i/{code}`, no real path exposure
-- **Security** - JWT auth, bcrypt password hashing, upload validation (extension + MIME), rate limiting, XSS/SQL injection protection
-- **Auto Refresh** - 5s polling on active page only, scroll-to-load for non-paged mode
-- **Format Support** - JPG, JPEG, PNG, GIF, WebP
-- **Config File** - JSON config with comments support
-- **Log System** - Auto rotation, retention control, ANSI colored console output
+- **Calendar Views** - Month/Year view switching, intuitive birthday distribution display
+- **Tag Management** - Custom tags with colors, filter birthdays by tag
+- **PDF Export** - Landscape A4 calendar with custom backgrounds, table effects, 5 preset fonts
+- **Email Reminders** - SMTP email sending with customizable templates and variable substitution
+- **Multi-User System** - Admin/User role separation with complete data isolation
+- **Security** - bcrypt password hashing, captcha, IP-based login rate limiting, audit logs
+- **Multi-Language** - Built-in English/Chinese, extensible language packs
+- **Theme Switching** - Dark/Light mode with 10 preset theme colors
+- **Config File** - JSON config with `//` comment support, interactive setup wizard on first run
 
 ## Quick Start
 
 ### Windows
 
-1. Download `imageshare-windows-amd64.exe`
-2. run from command line:
+1. Download `birthdaymemo-windows-amd64.exe`
+2. Run from command line:
    ```cmd
-   imageshare-windows-amd64.exe
+   birthdaymemo-windows-amd64.exe
    ```
-3. First launch auto-creates `config.json`, `database/`, `uploads/`, `logs/`
-4. Open `http://localhost:8080` in browser
+3. First launch enters interactive setup wizard (language, listen address, port, admin account)
+4. After setup, auto-generates `config.json` and `birthdaymemo.db`
+5. Open `http://localhost:<port>` in browser
 
 ### Linux
 
 1. Download the binary for your architecture:
-   - x86_64 server: `imageshare-linux-amd64`
-   - ARM64 server: `imageshare-linux-arm64`
+   - x86_64 server: `birthdaymemo-linux-amd64`
+   - ARM64 server: `birthdaymemo-linux-arm64`
 
 2. Add execute permission and run:
    ```bash
-   chmod +x imageshare-linux-amd64
-   ./imageshare-linux-amd64
+   chmod +x birthdaymemo-linux-amd64
+   ./birthdaymemo-linux-amd64
    ```
 
-3. First launch auto-creates `config.json`, `database/`, `uploads/`, `logs/`
-4. Open `http://localhost:8080` in browser
+3. First launch enters interactive setup wizard
+4. After setup, auto-generates `config.json` and `birthdaymemo.db`
+5. Open `http://localhost:<port>` in browser
 
 ### Run in Background (Linux)
 
 ```bash
 # Using nohup
-nohup ./imageshare-linux-amd64 > /dev/null 2>&1 &
+nohup ./birthdaymemo-linux-amd64 > /dev/null 2>&1 &
 
 # Or using systemd (recommended)
-sudo tee /etc/systemd/system/imageshare.service << 'EOF'
+sudo tee /etc/systemd/system/birthdaymemo.service << 'EOF'
 [Unit]
-Description=ImageShare
+Description=BirthDayMemo
 After=network.target
 
 [Service]
 Type=simple
-WorkingDirectory=/opt/imageshare
-ExecStart=/opt/imageshare/imageshare-linux-amd64
+WorkingDirectory=/opt/birthdaymemo
+ExecStart=/opt/birthdaymemo/birthdaymemo-linux-amd64
 Restart=on-failure
 
 [Install]
@@ -407,59 +412,46 @@ WantedBy=multi-user.target
 EOF
 
 sudo systemctl daemon-reload
-sudo systemctl enable imageshare
-sudo systemctl start imageshare
+sudo systemctl enable birthdaymemo
+sudo systemctl start birthdaymemo
 ```
 
-### Default Admin
-
-```
-Username: admin
-Password: image123456
-```
-
-You will be forced to change password on first login.
-
-### Change Admin Password via CLI
+### Reset Admin Password via CLI
 
 ```bash
 # Windows
-imageshare.exe -changepasswd <New-passwd>
+birthdaymemo.exe -reset-admin-password
 ```
 ```bash
 # Linux
-./imageshare-linux-amd64 -changepasswd <New-passwd>
+./birthdaymemo-linux-amd64 -reset-admin-password
 ```
+
+This will start an interactive prompt to enter the new password.
 
 ## Configuration
 
-Edit `config.json` (supports `//` comments):
+First run generates `config.json` via interactive wizard (supports `//` comments):
 
 ```json
 {
     "server": {
         "host": "0.0.0.0",
-        "port": 8080
+        "port": 12345
     },
-    "jwt_secret": "your-random-secret",
-    "upload_path": "./uploads",
-    "default_user_storage_limit_mb": 100,
-    "default_user_image_limit": 50,
-    "default_user_single_image_limit_mb": 10,
-    "log_retention": 7
+    "language": "en",
+    "log_retention_days": 14
 }
 ```
 
 | Field | Default | Description |
 |-------|---------|-------------|
 | `server.host` | `0.0.0.0` | Listen address. `0.0.0.0` for all interfaces, `127.0.0.1` for local only |
-| `server.port` | `8080` | Listen port |
-| `jwt_secret` | `image_share_secret_key_2024` | JWT signing key. Change this for security |
-| `upload_path` | `./uploads` | Image storage path, relative to executable or absolute |
-| `default_user_storage_limit_mb` | `100` | Default storage quota for new users (MB) |
-| `default_user_image_limit` | `50` | Default image count limit for new users |
-| `default_user_single_image_limit_mb` | `10` | Default single image size limit for new users (MB) |
-| `log_retention` | `7` | Number of log files to keep |
+| `server.port` | Random 10000+ | Listen port |
+| `language` | `zh` | Console language (zh/en) |
+| `log_retention_days` | `14` | Log file retention days, 0 for permanent |
+
+SMTP and PDF settings are configured via admin dashboard and stored in the database.
 
 ## Usage Guide
 
@@ -467,128 +459,28 @@ Edit `config.json` (supports `//` comments):
 
 After login, admin can:
 
-- **Dashboard** - View total images, users, guest tasks, storage usage
-- **Image Management** - Browse, preview, copy link, delete images. Support pagination or scroll-to-load
-- **User Management** - Create/edit/delete users, set quotas, reset passwords
-- **Guest Links** - Create shareable upload links with expiration and count limits
-- **System Logs** - View operation logs with auto-refresh
+- **User Management** - Create/edit/delete users, reset passwords
+- **System Config** - Listen address/port, log retention
+- **SMTP Settings** - Configure mail server with connection test
+- **Email Template** - Customize reminder email content with variable substitution (`{user}`, `{name}`, `{age}`, etc.)
+- **Audit Logs** - View operation logs with search and log file download
 
 ### User
 
-Admin creates user accounts. After login, user can:
+After admin creates an account, user can:
 
-- Upload images (within quota)
-- View own gallery
-- Copy image direct links
-- Delete own images
+- **Calendar View** - Month/Year view for birthday distribution, filter by tags
+- **Birthday Management** - Add/edit/delete birthdays with name, gender, date, tags
+- **Tag Management** - Create custom tags with colors
+- **PDF Export** - Custom backgrounds, table effects, fonts, export landscape A4 calendar
+- **Personal Settings** - Change password, language, theme, reminder preferences
 
-### Guest
+### Reminder Options
 
-Guest accesses upload page via shared link:
+Users can configure two reminder types:
 
-```
-http://your-domain.com/upload/{code}
-```
-
-No login required. Upload limited by link's expiration time and count limit.
-
-## API Reference
-
-### Authentication
-
-| Method | Path | Auth | Description |
-|--------|------|------|-------------|
-| `POST` | `/api/auth/login` | No | Login. Body: `{username, password}` |
-| `POST` | `/api/auth/logout` | Yes | Logout |
-| `GET` | `/api/auth/verify` | Yes | Verify token validity |
-| `PUT` | `/api/profile/password` | Yes | Change password. Body: `{old_password, new_password}` |
-
-### Admin APIs
-
-All admin APIs require JWT token with admin role.
-
-**Users**
-
-| Method | Path | Description |
-|--------|------|-------------|
-| `POST` | `/api/admin/users` | Create user. Body: `{username, password, storage_limit_mb, image_limit, single_image_limit_mb}` |
-| `GET` | `/api/admin/users` | Get user list. Params: `page`, `page_size`, `offset`, `limit` |
-| `GET` | `/api/admin/users/:id` | Get user by ID |
-| `PUT` | `/api/admin/users/:id` | Update user. Body: `{storage_limit_mb, image_limit, single_image_limit_mb}` |
-| `PUT` | `/api/admin/users/:id/password` | Reset user password. Body: `{new_password}` |
-| `DELETE` | `/api/admin/users/:id` | Delete user |
-
-**Guest Tasks**
-
-| Method | Path | Description |
-|--------|------|-------------|
-| `POST` | `/api/admin/tasks` | Create task. Body: `{max_count, expire_days}` |
-| `GET` | `/api/admin/tasks` | Get task list. Params: `page`, `page_size`, `offset`, `limit` |
-| `GET` | `/api/admin/tasks/:id` | Get task by ID |
-| `PUT` | `/api/admin/tasks/:id` | Update task. Body: `{max_count, expire_days}` |
-| `DELETE` | `/api/admin/tasks/:id` | Delete task. Params: `delete_files` |
-
-**Images**
-
-| Method | Path | Description |
-|--------|------|-------------|
-| `POST` | `/api/admin/upload` | Upload image. `multipart/form-data`, field: `file` |
-| `GET` | `/api/admin/images` | Get image list. Params: `page`, `page_size`, `offset`, `limit` |
-| `DELETE` | `/api/admin/images/:id` | Delete image |
-
-**Other**
-
-| Method | Path | Description |
-|--------|------|-------------|
-| `GET` | `/api/admin/stats` | Dashboard statistics |
-| `GET` | `/api/admin/logs` | Get system logs. Params: `file` |
-
-### User APIs
-
-All user APIs require JWT token.
-
-| Method | Path | Description |
-|--------|------|-------------|
-| `POST` | `/api/user/upload` | Upload image. `multipart/form-data`, field: `file` |
-| `GET` | `/api/user/images` | Get own images. Params: `page`, `page_size`, `offset`, `limit` |
-| `DELETE` | `/api/user/images/:id` | Delete own image |
-| `GET` | `/api/user/stats` | Get own storage stats |
-
-### Guest APIs
-
-| Method | Path | Description |
-|--------|------|-------------|
-| `POST` | `/api/upload/:code` | Upload image via guest link. `multipart/form-data`, field: `file` |
-| `GET` | `/api/upload/:code` | Check guest link status |
-| `GET` | `/api/guest/:code` | Get guest link info (no auth) |
-
-### Public
-
-| Method | Path | Description |
-|--------|------|-------------|
-| `GET` | `/i/:code` | Serve image by file code (direct link) |
-
-### Pagination Parameters
-
-List endpoints support two modes:
-
-**Paged mode** (load current page only):
-```
-?page=1&page_size=20
-```
-
-**Scroll mode** (load in batches):
-```
-?offset=0&limit=30
-```
-
-Response format:
-```json
-{
-    "data": [...],
-    "total": 100
-}
-```
+- **Due Date Reminder** - Send email N days before birthday (default 3), with configurable reminder time
+- **Periodic Summary** - Weekly/monthly fixed time summary of upcoming birthdays
 
 ## Build from Source
 
@@ -597,80 +489,135 @@ Response format:
 - Go 1.24+
 - Node.js 18+
 
-### Build
+### Font Files
 
-It is recommended to use **build.bat** for building first.
-**clean.bat** is used to clean up residual files (such as temporary files downloaded during the build process).
+The source code defaults to the following 5 fonts:
+
+| Font Name | License | Download |
+|-----------|---------|----------|
+| **Noto Sans SC** | Free for commercial use (Open Source) | Official GitHub or [Google Fonts](https://fonts.google.com/noto). Get the latest version. |
+| **ZCOOL XiaoWei** | Free for commercial use (ZCOOL Public Font) | ZCOOL official site, [Zijia](https://www.zijia.com.cn/), etc. |
+| **ZCOOL KuaiLe** | Free for commercial use (ZCOOL Public Font) | ZCOOL official site, [Zijia](https://www.zijia.com.cn/), etc. |
+| **Ma Shan Zheng** | Free for commercial use (SIL OFL) | Google Fonts, GitHub, and other open-source font platforms. |
+| **Long Cang** | Free for commercial use (HanChan Free License) | [Zijia](https://www.zijia.com.cn/), HanChan official channels. |
+
+After downloading, rename the files to match the following and place them in the `internal/pdfexport/fonts/` directory:
+
+| Preset Name | Filename | Style |
+|-------------|----------|-------|
+| Noto Sans SC | `NotoSansSC.ttf` | Modern sans-serif |
+| ZCOOL XiaoWei | `ZCOOLXiaoWei.ttf` | Thin serif |
+| ZCOOL KuaiLe | `ZCOOLKuaiLe.ttf` | Rounded & playful |
+| Ma Shan Zheng | `MaShanZheng.ttf` | Brush cursive |
+| Long Cang | `LongCang.ttf` | Pen cursive |
+
+If you prefer different fonts, place your own TTF font files in the `internal/pdfexport/fonts/` directory and update the filename mappings and preset list in `internal/pdfexport/fonts.go`.
+
+**Tip:** You can send the `internal/pdfexport/fonts.go` file to an AI assistant and say:
+
+> "I only have 'XX' font file, named 'XX.ttf' (can be multiple). Please help me remove the original ones and replace them with these font files."
+
+The AI will automatically update the filename mappings and preset list in `fonts.go`.
+
+### Using Build Tool (Recommended)
+
+The project includes `build-tool.bat`, a one-click build script (Windows). Double-click to run and select the target platform — it automatically builds the frontend and compiles the backend:
+
+```
+Select build target:
+
+  1 - Windows x64
+  2 - Windows ARM64
+  3 - Linux x64
+  4 - Linux ARM64
+  5 - macOS x64 (Intel)
+  6 - macOS ARM64 (Apple Silicon)
+  7 - All platforms
+```
+
+Build output is placed in the `BDM\` directory.
+
+### Manual Build Steps
 
 ```bash
-# 1. Build frontend
+# 1. Install frontend dependencies
 cd frontend
 npm install
-npm run build
+
+# 2. Build (Linux amd64 example)
+# Build frontend + compile backend (CGO_ENABLED=0 for static binary)
 cd ..
+cd frontend && npm run build && cd ..
+CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o BDM/birthdaymemo-linux-amd64 .
+```
 
-# 2. Copy frontend to backend embed directory
-# Windows PowerShell:
-Remove-Item -Recurse -Force backend\cmd\frontend
-Copy-Item -Recurse frontend\dist backend\cmd\frontend
-Remove-Item -Recurse -Force backend\frontend
-Copy-Item -Recurse frontend\dist backend\frontend
+Platform-specific build commands:
 
-# Linux/macOS:
-rm -rf backend/cmd/frontend && cp -r frontend/dist backend/cmd/frontend
-rm -rf backend/frontend && cp -r frontend/dist backend/frontend
+```bash
+# Windows x64
+set CGO_ENABLED=0 && set GOOS=windows && set GOARCH=amd64 && go build -o BDM\birthdaymemo-windows-amd64.exe .
 
-# 3. Build backend
-cd backend
+# Windows ARM64
+set CGO_ENABLED=0 && set GOOS=windows && set GOARCH=arm64 && go build -o BDM\birthdaymemo-windows-arm64.exe .
 
-# Windows amd64:
-GOOS=windows GOARCH=amd64 go build -o ../../build/imageshare-windows-amd64.exe ./cmd/
+# Linux x64
+CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o BDM/birthdaymemo-linux-amd64 .
 
-# Linux amd64:
-GOOS=linux GOARCH=amd64 go build -o ../../build/imageshare-linux-amd64 ./cmd/
+# Linux ARM64
+CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -o BDM/birthdaymemo-linux-arm64 .
 
-# Linux arm64:
-GOOS=linux GOARCH=arm64 go build -o ../../build/imageshare-linux-arm64 ./cmd/
+# macOS x64 (Intel)
+CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build -o BDM/birthdaymemo-macos-amd64 .
+
+# macOS ARM64 (Apple Silicon)
+CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -o BDM/birthdaymemo-macos-arm64 .
 ```
 
 ## Tech Stack
 
-**Backend:** Go, Gin, GORM, SQLite, JWT, bcrypt
+**Backend:** Go, Chi, GORM, SQLite, bcrypt, fpdf
 
-**Frontend:** Vue 3, TypeScript, Vite, Element Plus, Pinia, Axios
+**Frontend:** Vue 3, TypeScript, Vite, Pinia, Vue Router
 
 ## Project Structure
 
 ```
 .
-├── backend/
-│   ├── cmd/
-│   │   ├── main.go          # Entry point & router
-│   │   └── frontend/        # Embedded frontend (go:embed)
-│   ├── config/              # Configuration
-│   └── internal/
-│       ├── controller/      # HTTP handlers
-│       ├── service/         # Business logic
-│       ├── repository/      # Data access
-│       ├── models/          # Data models
-│       ├── middleware/       # JWT, rate limiting
-│       └── logger/          # Log system
+├── main.go                  # Entry point
+├── frontend_dist/           # Embedded frontend (go:embed)
+├── internal/
+│   ├── auth/                # Authentication & session management
+│   ├── config/              # Configuration loading
+│   ├── console/             # Interactive setup wizard
+│   ├── database/            # Database initialization
+│   ├── email/               # SMTP email sending
+│   ├── i18n/                # Multi-language support
+│   ├── logger/              # Log system
+│   ├── models/              # Data models
+│   ├── pdfexport/           # PDF export engine
+│   │   └── fonts/           # Font files (must be provided by user)
+│   ├── reminder/            # Reminder scheduler
+│   ├── security/            # Login rate limiting
+│   └── web/                 # HTTP handlers & middleware
 └── frontend/
     └── src/
-        ├── views/           # Vue components
+        ├── views/           # Vue page components
+        ├── components/      # Shared components
         ├── router/          # Vue Router
-        ├── stores/          # Pinia stores
-        └── utils/           # Axios instance
+        ├── stores/          # Pinia state management
+        ├── api/             # API client
+        ├── locales/         # Language packs
+        └── styles/          # Style files
 ```
 
 ## License
 
-This project is licensed under the **GNU Affero General Public License v3.0**.
+This project is licensed under the **Apache License 2.0**.
 
 - You are free to use, modify, and distribute this software
-- Modified versions must be open-sourced under the same license
-- You must preserve the original author's copyright notice
-- Network use (SaaS) also requires source code disclosure (AGPL-specific clause)
+- Commercial use is allowed in general, but **this project explicitly prohibits any commercial use**
+- You must preserve the original author's copyright notice and license text
+- Modified files must include a notice of changes
 
 See [LICENSE](LICENSE) for details.
 
