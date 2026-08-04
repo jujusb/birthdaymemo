@@ -1,0 +1,9 @@
+/BDM
+
+frontend/node_modules/
+frontend/dist/
+
+*.ttf
+
+/项目从0开始创建全平台通用的网页APP.md
+/CODING_RULES.md
