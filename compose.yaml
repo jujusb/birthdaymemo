@@ -12,8 +12,9 @@
 #      Log in and change it afterwards.
 #   3. Reset admin password: docker compose run --rm birthdaymemo -reset-admin-password
 #
-# Data (config.json, birthdaymemo.db, logs/, languages/) persists in the
-# ./data directory (bind mount) next to the executable in /data.
+# Data (config.json, birthdaymemo.db, logs/, languages/) persists in
+# $BIRTHDAYMEMO_DATA_DIR (bind mount at /opt/birthdaymemo), next to a copy
+# of the executable that the entrypoint places there on every start.
 # Environment variables win over config.json on every start and are
 # written back to config.json, so compose is the source of truth.
 #

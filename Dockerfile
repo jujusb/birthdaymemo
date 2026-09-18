@@ -62,20 +62,23 @@ RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/birthda
 FROM alpine:3
 RUN apk add --no-cache ca-certificates tzdata \
  && addgroup -S app && adduser -S app -G app \
- && mkdir -p /data /opt/birthdaymemo \
- && chown app:app /data
+ && mkdir -p /opt/birthdaymemo
 
-# Pristine binary. The entrypoint copies it into /opt/birthdaymemo on every start so
-# image updates take effect even though /data is a persistent volume.
-COPY --from=backend /out/birthdaymemo /opt/birthdaymemo/birthdaymemo
+# Pristine binary, kept OUTSIDE the persistent mount: /opt/birthdaymemo is a
+# bind mount from compose.yaml, so anything baked into that path is shadowed.
+# docker-entrypoint.sh copies it into the mounted dir on every start so image
+# updates take effect even though user data is persistent.
+COPY --from=backend /out/birthdaymemo /usr/local/bin/birthdaymemo
+COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 
 # The app stores config.json, birthdaymemo.db, logs/ and languages/
-# next to the executable, so the executable must run from /data.
-WORKDIR /data
+# next to the executable, so the entrypoint runs it from the persistent
+# /opt/birthdaymemo mount.
 USER app
 
 # Default listen port. The actual port is BIRTHDAYMEMO_LISTEN_PORT
 # from compose.yaml; keep EXPOSE in sync when changing the default.
 EXPOSE 8080
 
-ENTRYPOINT ["/opt/birthdaymemo/birthdaymemo"]
+ENTRYPOINT ["docker-entrypoint.sh"]
