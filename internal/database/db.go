@@ -33,6 +33,13 @@ func Init() (*gorm.DB, error) {
 		return nil, err
 	}
 
+	// 与 birthdaymemo-guest 服务共享同一 SQLite 文件时，读请求撞上编辑端写事务
+	// 会返回 SQLITE_BUSY；设置 busy_timeout 让这类读等待最多 5 秒而非直接失败。
+	// 日志模式保持默认（非 WAL），避免 -wal/-shm 文件让 bind mount 情况更复杂。
+	if err := db.Exec("PRAGMA busy_timeout = 5000").Error; err != nil {
+		return nil, err
+	}
+
 	if err := db.AutoMigrate(
 		&models.User{},
 		&models.ReminderSetting{},
@@ -48,6 +55,8 @@ func Init() (*gorm.DB, error) {
 		&models.ReminderSent{},
 		&models.UserSession{},
 		&models.EmailConfirmation{},
+		&models.ShareLink{},
+		&models.TagGrant{},
 	); err != nil {
 		return nil, err
 	}

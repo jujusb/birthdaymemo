@@ -1,10 +1,21 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import * as api from '@/api'
 import type { PdfSetting, PdfRange, PdfRequest, PresetFont, CalendarMonthData, CalendarDayBirthday } from '@/api/types'
 import { ApiError } from '@/api/client'
 import { useI18nStore } from '@/stores/i18n'
 import { useToast } from '@/composables/useToast'
+
+// 分享模式：客人通过公开链接使用导出窗口（免登录，仅限分享范围的数据）
+// 未传 shareToken 时为所有者模式（需登录，可保存设计）
+const props = defineProps<{ shareToken?: string }>()
+const isShare = computed(() => !!props.shareToken)
+const router = useRouter()
+
+// 旧版硬编码中文默认标题（与后端 models.DefaultPdfTitleText 一致）：
+// 存量用户若从未改过标题，非中文 UI 下显示为本地化默认标题
+const LEGACY_DEFAULT_TITLE = '[{month}] 当月 {count} 人过生日'
 
 const i18n = useI18nStore()
 const t = i18n.t
@@ -14,6 +25,9 @@ const today = new Date()
 const currentYear = today.getFullYear()
 const monthKeyList = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec']
 const monthNames = computed(() => monthKeyList.map((k) => t('calendar.' + k)))
+// 预览表头星期：按 UI 语言本地化（与后端 PDF 一致，而非硬编码中文）
+const dayKeyList = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat']
+const dayNames = computed(() => dayKeyList.map((k) => t('calendar.' + k)))
 
 // 渐变预设
 interface GradientPreset {
@@ -67,6 +81,7 @@ const settings = ref<PdfSetting>({
   cell_border_color: '#000000',
   cell_border_opacity: 100,
   text_color: '#333333',
+  show_age: false,
 })
 
 const presetFonts = ref<PresetFont[]>([])
@@ -80,9 +95,18 @@ const tableFontName = ref('')
 const bgImageData = ref<string>('')
 const bgImageName = ref('')
 
-// 日期范围（仅指定月份或整年）
-const rangeType = ref<'month' | 'year'>('month')
+// 日期范围（指定月份 / 整年 / 学年：进行中的学年，9 月起 12 页）
+const rangeType = ref<'month' | 'year' | 'school_year'>('month')
 const rangeMonth = ref(today.getMonth() + 1)
+
+// 进行中的学年起始年份：9 月及之后从当年 9 月起，否则从去年 9 月起（与后端一致）
+const schoolStartYear = computed(() =>
+  today.getMonth() + 1 >= 9 ? today.getFullYear() : today.getFullYear() - 1,
+)
+const schoolYearLabel = computed(() => {
+  const y = schoolStartYear.value
+  return `${y}/${y + 1}`
+})
 
 const saving = ref(false)
 const downloading = ref(false)
@@ -115,8 +139,10 @@ const monthOptions = computed(() =>
 )
 
 const currentRange = computed<PdfRange>(() => {
-  if (rangeType.value === 'year') return { type: 'year' }
-  return { type: 'month', month: rangeMonth.value }
+  // lang 告诉后端用哪种语言渲染星期表头/脚注/默认标题
+  if (rangeType.value === 'school_year') return { type: 'school_year', lang: i18n.lang }
+  if (rangeType.value === 'year') return { type: 'year', lang: i18n.lang }
+  return { type: 'month', month: rangeMonth.value, lang: i18n.lang }
 })
 
 // 选中的渐变预设（用于高亮）
@@ -414,8 +440,16 @@ function clearBgImage() {
 
 async function loadSettings() {
   try {
-    const s = await api.getPdfSettings()
-    settings.value = { ...settings.value, ...s }
+    // 分享模式：读取所有者的 PDF 设计作为初始值（只读，客人无法保存）
+    const s = isShare.value
+      ? await api.getPublicSharePdfSettings(props.shareToken as string)
+      : await api.getPdfSettings()
+    // 旧版中文默认值：非中文 UI 下替换为本地化默认标题（不自动保存，点保存后才持久化）
+    let titleText = s.title_text
+    if (!titleText || (titleText === LEGACY_DEFAULT_TITLE && i18n.lang !== 'zh')) {
+      titleText = t('export.defaultTitle')
+    }
+    settings.value = { ...settings.value, ...s, title_text: titleText }
   } catch (e) {
     toast.error((e as ApiError).message)
   }
@@ -423,7 +457,7 @@ async function loadSettings() {
 
 async function loadPresetFonts() {
   try {
-    presetFonts.value = await api.listPresetFonts()
+    presetFonts.value = isShare.value ? await api.getPublicPdfFonts() : await api.listPresetFonts()
   } catch { /* 静默 */ }
 }
 
@@ -451,6 +485,15 @@ function genderColor(g: string): string {
   if (g === 'male') return '#4A90D9'
   if (g === 'female') return '#E91E63'
   return '#9E9E9E'
+}
+
+// 预览用的年龄后缀（如 " (35 · 1990)"），与后端 PDF 的 ageSuffix 对齐：
+// 出生年份 = 页面年份 - 即将到的年龄；年份未知或未开启时返回空串
+function previewAgeSuffix(b: CalendarDayBirthday, pageYear: number): string {
+  if (!settings.value.show_age || b.upcoming_age <= 0) return ''
+  const birthYear = pageYear - b.upcoming_age
+  if (birthYear <= 0) return ''
+  return ` (${b.upcoming_age} · ${birthYear})`
 }
 
 // 构建单月预览数据
@@ -484,7 +527,7 @@ function buildPreviewMonth(data: CalendarMonthData): PreviewMonth {
         footnotes.push({
           index: footnoteCounter,
           day: dayNum,
-          names: birthdays.map((b) => b.name),
+          names: birthdays.map((b) => b.name + previewAgeSuffix(b, year)),
         })
       }
       rowCells.push({ day: dayNum, inMonth, birthdays, index })
@@ -494,20 +537,35 @@ function buildPreviewMonth(data: CalendarMonthData): PreviewMonth {
   return { year, month, title, cells, footnotes }
 }
 
-// 加载预览数据
+// 加载预览数据（分享模式走公开日历接口，仅限分享范围）
 async function loadPreviewData() {
   previewLoading.value = true
   try {
-    const months: PreviewMonth[] = []
-    if (rangeType.value === 'year') {
-      // 整年：依次加载 1-12 月
-      for (let m = 1; m <= 12; m++) {
-        const data = await api.getCalendarMonth(currentYear, m)
-        months.push(buildPreviewMonth(data))
+    const loadMonth = (y: number, m: number) =>
+      isShare.value
+        ? api.getPublicShareCalendarMonth(props.shareToken as string, y, m)
+        : api.getCalendarMonth(y, m)
+    // [year, month] 目标页：整年 1-12 月；学年为进行中学年的 9 月起 12 页
+    const targets: Array<[number, number]> = []
+    if (rangeType.value === 'school_year') {
+      const sy = schoolStartYear.value
+      for (let i = 0; i < 12; i++) {
+        let m = 9 + i
+        let y = sy
+        if (m > 12) {
+          m -= 12
+          y++
+        }
+        targets.push([y, m])
       }
+    } else if (rangeType.value === 'year') {
+      for (let m = 1; m <= 12; m++) targets.push([currentYear, m])
     } else {
-      const data = await api.getCalendarMonth(currentYear, rangeMonth.value)
-      months.push(buildPreviewMonth(data))
+      targets.push([currentYear, rangeMonth.value])
+    }
+    const months: PreviewMonth[] = []
+    for (const [y, m] of targets) {
+      months.push(buildPreviewMonth(await loadMonth(y, m)))
     }
     previewMonths.value = months
   } catch (e) {
@@ -520,6 +578,11 @@ async function loadPreviewData() {
 // 配置或日期范围变化时实时刷新预览数据
 // 注：仅当日历数据未加载或月份切换时重新请求 API；配置变化（颜色/字体等）通过 computed 自动反映
 watch([rangeType, rangeMonth], () => {
+  loadPreviewData()
+})
+
+// 年龄开关影响预计算的脚注名单，切换时重建预览
+watch(() => settings.value.show_age, () => {
   loadPreviewData()
 })
 
@@ -555,9 +618,20 @@ function buildRequest(r: PdfRange): PdfRequest {
 }
 
 onMounted(async () => {
+  if (isShare.value) {
+    // 分享页直达导出窗口时（如刷新），按浏览器语言初始化（与 ShareView 一致）
+    try {
+      const nav = (navigator.language || 'en').slice(0, 2)
+      await i18n.init(nav === 'zh' ? 'zh' : 'en')
+    } catch { /* ignore */ }
+  }
   await Promise.all([loadSettings(), loadPresetFonts()])
   await loadPreviewData()
 })
+
+function goBackToShare() {
+  router.push({ name: 'share', params: { token: props.shareToken } })
+}
 
 async function saveSettings() {
   saving.value = true
@@ -576,12 +650,15 @@ async function download() {
   downloading.value = true
   try {
     const req = buildRequest(currentRange.value)
-    const resp = await api.pdfExport(req)
+    const resp = isShare.value
+      ? await api.publicSharePdfExport(props.shareToken as string, req)
+      : await api.pdfExport(req)
     const blob = await resp.blob()
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    const suffix = currentRange.value.type === 'year' ? 'year' : `month${currentRange.value.month}`
+    const rt = currentRange.value.type
+    const suffix = rt === 'year' ? 'year' : rt === 'school_year' ? 'school' : `month${currentRange.value.month}`
     a.download = `birthdays-${suffix}.pdf`
     document.body.appendChild(a)
     a.click()
@@ -843,6 +920,9 @@ function capitalize(s: string): string {
 
 <template>
   <div class="export-view">
+    <div v-if="isShare" class="row mb-8">
+      <button @click="goBackToShare">‹ {{ t('common.back') }}</button>
+    </div>
     <h2 class="page-title">{{ t('export.title') }}</h2>
 
     <div class="export-layout">
@@ -1119,16 +1199,25 @@ function capitalize(s: string): string {
               <input v-model="rangeType" type="radio" value="year" />
               {{ t('export.fullYear') }}
             </label>
+            <label class="radio-opt">
+              <input v-model="rangeType" type="radio" value="school_year" />
+              {{ t('export.schoolYear') }} {{ schoolYearLabel }}
+            </label>
           </div>
           <div v-if="rangeType === 'month'" class="row gap-8">
             <select v-model.number="rangeMonth" class="txt-input">
               <option v-for="opt in monthOptions" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
             </select>
           </div>
+          <label class="check-opt mt-8">
+            <input v-model="settings.show_age" type="checkbox" />
+            {{ t('export.showAge') }}
+          </label>
+          <span class="hint">{{ t('export.showAgeHint') }}</span>
         </div>
 
         <div class="row gap-8 actions">
-          <button class="primary" :disabled="saving" @click="saveSettings">
+          <button v-if="!isShare" class="primary" :disabled="saving" @click="saveSettings">
             {{ saving ? t('common.loading') : t('common.save') }}
           </button>
           <button :disabled="downloading" @click="download">
@@ -1158,7 +1247,7 @@ function capitalize(s: string): string {
                 <div class="calendar-outer" :class="outerGlassClass" :style="[outerBgStyle, outerBorderStyle]">
                   <!-- 表头 -->
                   <div class="calendar-header" :style="{ color: textColor }">
-                    <div v-for="(wd, i) in ['日','一','二','三','四','五','六']" :key="i" class="header-cell">{{ wd }}</div>
+                    <div v-for="(wd, i) in dayNames" :key="i" class="header-cell">{{ wd }}</div>
                   </div>
                   <!-- 6×7 网格 -->
                   <div class="calendar-grid">
@@ -1181,7 +1270,7 @@ function capitalize(s: string): string {
                               :style="{ color: textColor }"
                             >
                               <span class="cell-gender-dot" :style="{ background: genderColor(b.gender) }"></span>
-                              <span class="cell-name-text">{{ truncateName(b.name, 6) }}</span>
+                              <span class="cell-name-text">{{ truncateName(b.name, settings.show_age ? 4 : 6) + previewAgeSuffix(b, pm.year) }}</span>
                             </div>
                           </div>
                         </template>
@@ -1193,7 +1282,7 @@ function capitalize(s: string): string {
               <!-- 脚注 -->
               <div v-if="pm.footnotes.length > 0" class="footnotes" :style="{ color: textColor }">
                 <div v-for="fn in pm.footnotes" :key="fn.index" class="footnote-item">
-                  [{{ fn.index }}] {{ fn.day }}日: {{ fn.names.join('、') }}
+                  {{ t('export.footnote', { index: fn.index, day: fn.day, names: fn.names.join('、') }) }}
                 </div>
               </div>
             </div>

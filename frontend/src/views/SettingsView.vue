@@ -9,6 +9,7 @@ import { useThemeStore } from '@/stores/theme'
 import { THEME_COLORS, DEFAULT_THEME_COLOR } from '@/stores/themes'
 import { useToast } from '@/composables/useToast'
 import AboutSection from '@/components/AboutSection.vue'
+import SharingPanel from '@/components/SharingPanel.vue'
 
 const auth = useAuthStore()
 const i18n = useI18nStore()
@@ -265,6 +266,14 @@ async function save() {
           <button type="button" class="self-clear-btn" @click="clearSelfBirthday">
             {{ t('common.reset') }}
           </button>
+          <button
+            type="button"
+            class="primary self-save-btn"
+            :disabled="saving"
+            @click="save"
+          >
+            {{ saving ? t('common.loading') : t('common.save') }}
+          </button>
         </div>
       </section>
 
@@ -482,6 +491,9 @@ async function save() {
         </div>
       </section>
 
+      <!-- 分享与委托 -->
+      <SharingPanel />
+
       <!-- 关于 -->
       <AboutSection />
     </template>
@@ -636,6 +648,11 @@ async function save() {
 .self-clear-btn {
   flex-shrink: 0;
   padding: 8px 12px;
+  font-size: 13px;
+}
+.self-save-btn {
+  flex-shrink: 0;
+  padding: 8px 16px;
   font-size: 13px;
 }
 /* 任务5（本批次）：未绑定邮箱时遮罩提醒设置 */

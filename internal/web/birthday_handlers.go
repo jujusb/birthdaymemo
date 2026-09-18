@@ -59,43 +59,118 @@ func validateBirthDate(year, month, day int, lang string) string {
 // birthdayWithTag 生日附带多标签响应
 type birthdayWithTag struct {
 	models.Birthday
-	Tags []models.Tag `json:"tags"`
+	Tags          []models.Tag `json:"tags"`
+	Shared        bool         `json:"shared"`
+	CanEdit       bool         `json:"can_edit"`
+	OwnerUsername string       `json:"owner_username,omitempty"`
 }
 
 func (s *Server) listBirthdays(w http.ResponseWriter, r *http.Request) {
 	uid := currentUserID(r)
 	tagIDsStr := r.URL.Query().Get("tag_ids")
-	q := s.db.Where("user_id = ?", uid)
-	// 多标签筛选：AND 逻辑 - 仅返回同时拥有所有所选标签的生日
+	var filterIDs []uint
 	if tagIDsStr != "" {
 		parts := strings.Split(tagIDsStr, ",")
-		var ids []uint
 		for _, p := range parts {
 			if id, err := strconv.Atoi(strings.TrimSpace(p)); err == nil && id > 0 {
-				ids = append(ids, uint(id))
+				filterIDs = append(filterIDs, uint(id))
 			}
 		}
-		if len(ids) > 0 {
-			q = q.Where("id IN (SELECT birthday_id FROM birthday_tags WHERE tag_id IN ? GROUP BY birthday_id HAVING COUNT(DISTINCT tag_id) = ?)", ids, len(ids))
-		}
 	}
-	var bds []models.Birthday
-	q.Order("birth_month asc, birth_day asc").Find(&bds)
+	bds, err := visibleBirthdays(s.db, uid)
+	if err != nil {
+		Fail(w, CodeInternal, i18n.T(s.cfg.Language, "error.internal"))
+		return
+	}
+	// 多标签筛选：AND 逻辑 - 仅返回同时拥有所有所选标签的生日
+	if len(filterIDs) > 0 {
+		need := make(map[uint]struct{}, len(filterIDs))
+		for _, id := range filterIDs {
+			need[id] = struct{}{}
+		}
+		tagsByBid := s.birthdaysTagsMap(uid, bds)
+		filtered := bds[:0]
+		for _, b := range bds {
+			have := make(map[uint]struct{}, len(tagsByBid[b.ID]))
+			for _, t := range tagsByBid[b.ID] {
+				have[t.ID] = struct{}{}
+			}
+			ok := true
+			for id := range need {
+				if _, has := have[id]; !has {
+					ok = false
+					break
+				}
+			}
+			if ok {
+				filtered = append(filtered, b)
+			}
+		}
+		bds = filtered
+	}
+	// 排序：按月日
+	sortBirthdays(bds)
 
 	// 附带多标签信息
 	tagsByBid := s.birthdaysTagsMap(uid, bds)
+	ownerNames := s.birthdayOwnerNames(bds)
 	out := make([]birthdayWithTag, 0, len(bds))
 	for _, b := range bds {
 		tags := tagsByBid[b.ID]
 		if tags == nil {
 			tags = []models.Tag{}
 		}
-		out = append(out, birthdayWithTag{Birthday: b, Tags: tags})
+		shared := b.UserID != uid
+		out = append(out, birthdayWithTag{
+			Birthday:      b,
+			Tags:          tags,
+			Shared:        shared,
+			CanEdit:       !shared || canEditBirthday(s.db, uid, b),
+			OwnerUsername: ownerNames[b.UserID],
+		})
 	}
 	OK(w, out)
 }
 
+// sortBirthdays 按月日排序
+func sortBirthdays(bds []models.Birthday) {
+	for i := 1; i < len(bds); i++ {
+		for j := i; j > 0; j-- {
+			a, c := bds[j-1], bds[j]
+			if a.BirthMonth > c.BirthMonth || (a.BirthMonth == c.BirthMonth && a.BirthDay > c.BirthDay) {
+				bds[j-1], bds[j] = bds[j], bds[j-1]
+			} else {
+				break
+			}
+		}
+	}
+}
+
+// birthdayOwnerNames 批量查询 owner 用户名
+func (s *Server) birthdayOwnerNames(bds []models.Birthday) map[uint]string {
+	out := map[uint]string{}
+	if len(bds) == 0 {
+		return out
+	}
+	set := map[uint]struct{}{}
+	for _, b := range bds {
+		set[b.UserID] = struct{}{}
+	}
+	ids := make([]uint, 0, len(set))
+	for id := range set {
+		ids = append(ids, id)
+	}
+	var users []models.User
+	s.db.Where("id IN ?", ids).Find(&users)
+	for _, u := range users {
+		out[u.ID] = u.Username
+	}
+	return out
+}
+
 // birthdaysTagsMap 返回一组生日的标签 map[birthdayID][]Tag
+// 注意：可见性已由调用方（visibleBirthdays/canView）保证，此处不按 user 过滤，
+// 以便共享生日能带出 owner 的标签信息
 func (s *Server) birthdaysTagsMap(uid uint, bds []models.Birthday) map[uint][]models.Tag {
 	out := make(map[uint][]models.Tag, len(bds))
 	if len(bds) == 0 {
@@ -121,7 +196,7 @@ func (s *Server) birthdaysTagsMap(uid uint, bds []models.Birthday) map[uint][]mo
 		tagIDs = append(tagIDs, id)
 	}
 	var tags []models.Tag
-	s.db.Where("id IN ? AND user_id = ?", tagIDs, uid).Find(&tags)
+	s.db.Where("id IN ?", tagIDs).Find(&tags)
 	tagMap := make(map[uint]models.Tag, len(tags))
 	for _, t := range tags {
 		tagMap[t.ID] = t
@@ -186,13 +261,39 @@ func (s *Server) createBirthday(w http.ResponseWriter, r *http.Request) {
 		Fail(w, CodeBadRequest, msg)
 		return
 	}
-	tagIDs, err := s.validateTagIDs(uid, req.TagIDs)
+	// 解析实际 owner：含被授予 edit 的他人 tag → 创建进对方日历（委托创建）
+	ownerID, err := resolveCreateOwner(s.db, uid, req.TagIDs)
+	if err != nil {
+		Fail(w, CodeForbidden, i18n.T(s.cfg.Language, "error.forbidden"))
+		return
+	}
+	// 共享创建必须携带至少一个 tag（否则新记录对 grantor 不可见）
+	if ownerID != uid && len(req.TagIDs) == 0 {
+		Fail(w, CodeBadRequest, i18n.T(s.cfg.Language, "error.badRequest"))
+		return
+	}
+	var tagIDs []uint
+	if ownerID == uid {
+		tagIDs, err = s.validateTagIDs(uid, req.TagIDs)
+	} else {
+		// 共享创建：resolver 已校验每个 tag 合法（自有或被授予 edit），此处仅去重
+		seen := map[uint]struct{}{}
+		for _, tid := range req.TagIDs {
+			if tid == 0 {
+				continue
+			}
+			if _, ok := seen[tid]; !ok {
+				seen[tid] = struct{}{}
+				tagIDs = append(tagIDs, tid)
+			}
+		}
+	}
 	if err != nil {
 		Fail(w, CodeBadRequest, i18n.T(s.cfg.Language, "error.notFound"))
 		return
 	}
 	bd := models.Birthday{
-		UserID:     uid,
+		UserID:     ownerID,
 		Name:       name,
 		Gender:     validGender(req.Gender),
 		BirthYear:  req.BirthYear,
@@ -215,8 +316,16 @@ func (s *Server) updateBirthday(w http.ResponseWriter, r *http.Request) {
 	uid := currentUserID(r)
 	id := chi.URLParam(r, "id")
 	var bd models.Birthday
-	if err := s.db.Where("id = ? AND user_id = ?", id, uid).First(&bd).Error; err != nil {
+	if err := s.db.Where("id = ?", id).First(&bd).Error; err != nil {
 		Fail(w, CodeNotFound, i18n.T(s.cfg.Language, "error.notFound"))
+		return
+	}
+	if !canViewBirthday(s.db, uid, bd) {
+		Fail(w, CodeNotFound, i18n.T(s.cfg.Language, "error.notFound"))
+		return
+	}
+	if !canEditBirthday(s.db, uid, bd) {
+		Fail(w, CodeForbidden, i18n.T(s.cfg.Language, "error.forbidden"))
 		return
 	}
 	var req birthdayRequest
@@ -233,10 +342,44 @@ func (s *Server) updateBirthday(w http.ResponseWriter, r *http.Request) {
 		Fail(w, CodeBadRequest, msg)
 		return
 	}
-	tagIDs, err := s.validateTagIDs(uid, req.TagIDs)
-	if err != nil {
-		Fail(w, CodeBadRequest, i18n.T(s.cfg.Language, "error.notFound"))
-		return
+	var tagIDs []uint
+	var u models.User
+	s.db.First(&u, uid)
+	isOwnerOrAdmin := uid == bd.UserID || u.Role == models.RoleAdmin
+	if isOwnerOrAdmin {
+		// 本人：tag 须属于生日 owner；admin 跨 owner 编辑时同样约束到 owner 域
+		var count int64
+		scopeUID := bd.UserID
+		if u.Role == models.RoleAdmin && uid != bd.UserID {
+			// admin：允许使用 owner 的 tag 或自己的 tag
+			var tags []models.Tag
+			s.db.Where("id IN ?", req.TagIDs).Find(&tags)
+			if len(tags) != len(req.TagIDs) {
+				Fail(w, CodeBadRequest, i18n.T(s.cfg.Language, "error.notFound"))
+				return
+			}
+			for _, t := range tags {
+				if t.UserID != scopeUID && t.UserID != uid {
+					Fail(w, CodeBadRequest, i18n.T(s.cfg.Language, "error.notFound"))
+					return
+				}
+			}
+			tagIDs = req.TagIDs
+		} else {
+			s.db.Model(&models.Tag{}).Where("id IN ? AND user_id = ?", req.TagIDs, scopeUID).Count(&count)
+			if len(req.TagIDs) > 0 && count != int64(len(req.TagIDs)) {
+				Fail(w, CodeBadRequest, i18n.T(s.cfg.Language, "error.notFound"))
+				return
+			}
+			tagIDs = req.TagIDs
+		}
+	} else {
+		// 被委托人：结果集必须保留 ≥1 授予-edit tag，且仅含自有/授予 tag
+		if err := validateUpdateTagSet(s.db, uid, bd, req.TagIDs); err != nil {
+			Fail(w, CodeForbidden, i18n.T(s.cfg.Language, "error.forbidden"))
+			return
+		}
+		tagIDs = req.TagIDs
 	}
 	bd.Name = name
 	bd.Gender = validGender(req.Gender)
@@ -258,8 +401,19 @@ func (s *Server) deleteBirthday(w http.ResponseWriter, r *http.Request) {
 	uid := currentUserID(r)
 	id := chi.URLParam(r, "id")
 	var bd models.Birthday
-	if err := s.db.Where("id = ? AND user_id = ?", id, uid).First(&bd).Error; err != nil {
+	if err := s.db.Where("id = ?", id).First(&bd).Error; err != nil {
 		Fail(w, CodeNotFound, i18n.T(s.cfg.Language, "error.notFound"))
+		return
+	}
+	// 删除仅限本人/admin：被委托人（即使可编辑）也不可删除
+	var u models.User
+	s.db.First(&u, uid)
+	if uid != bd.UserID && u.Role != models.RoleAdmin {
+		if canViewBirthday(s.db, uid, bd) {
+			Fail(w, CodeForbidden, i18n.T(s.cfg.Language, "error.forbidden"))
+		} else {
+			Fail(w, CodeNotFound, i18n.T(s.cfg.Language, "error.notFound"))
+		}
 		return
 	}
 	// 删除关联（BirthdayTag 不级联，手动删）

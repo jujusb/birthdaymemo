@@ -7,6 +7,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/go-chi/chi/v5"
+	"github.com/mcbill1/birthdaymemo/internal/database"
 	"github.com/mcbill1/birthdaymemo/internal/i18n"
 	"github.com/mcbill1/birthdaymemo/internal/models"
 	"github.com/mcbill1/birthdaymemo/internal/pdfexport"
@@ -31,9 +33,9 @@ type pdfRequest struct {
 }
 
 // validateRange 校验导出范围：仅检查类型与月份范围，生日每年重复，不做年份限制
-// 年份由后端使用当前时间自动填充
+// 年份由后端使用当前时间自动填充；学年导出进行中的学年（9 月起 12 页）
 func validateRange(r pdfexport.Range, lang string) string {
-	if r.Type != pdfexport.RangeYear && r.Type != pdfexport.RangeMonth {
+	if r.Type != pdfexport.RangeYear && r.Type != pdfexport.RangeMonth && r.Type != pdfexport.RangeSchoolYear {
 		return i18n.T(lang, "validation.invalidRangeType")
 	}
 	if r.Type == pdfexport.RangeMonth {
@@ -44,16 +46,20 @@ func validateRange(r pdfexport.Range, lang string) string {
 	return ""
 }
 
-// loadEntriesForRange 加载范围内的生日
+// loadEntriesForRange 加载某用户范围内（整年/指定月份）的生日
 func (s *Server) loadEntriesForRange(uid uint, r pdfexport.Range) []pdfexport.BirthdayEntry {
 	var bds []models.Birthday
-	q := s.db.Where("user_id = ?", uid)
-	if r.Type == pdfexport.RangeMonth {
-		q = q.Where("birth_month = ?", r.Month)
-	}
-	q.Find(&bds)
+	s.db.Where("user_id = ?", uid).Find(&bds)
+	return entriesForBirthdays(bds, r)
+}
+
+// entriesForBirthdays 将生日记录按导出范围转为 PDF 条目（月份范围在内存中过滤）
+func entriesForBirthdays(bds []models.Birthday, r pdfexport.Range) []pdfexport.BirthdayEntry {
 	out := make([]pdfexport.BirthdayEntry, 0, len(bds))
 	for _, b := range bds {
+		if r.Type == pdfexport.RangeMonth && b.BirthMonth != r.Month {
+			continue
+		}
 		out = append(out, pdfexport.BirthdayEntry{
 			Name: b.Name, Gender: b.Gender, BirthYear: b.BirthYear,
 			BirthMonth: b.BirthMonth, BirthDay: b.BirthDay,
@@ -134,6 +140,58 @@ func (s *Server) pdfExport(w http.ResponseWriter, r *http.Request) {
 	entries := s.loadEntriesForRange(u.ID, req.Range)
 	res := buildResources(req)
 	data, err := s.pdfGen.Generate(req.Range, entries, req.Settings, now, res)
+	if err != nil {
+		Fail(w, CodeInternal, err.Error())
+		return
+	}
+	w.Header().Set("Content-Type", "application/pdf")
+	w.Header().Set("Content-Disposition", "attachment; filename=birthdaymemo.pdf")
+	w.Write(data)
+}
+
+// ---- 公开分享的 PDF 导出（免登录，仅限分享范围内的数据） ----
+
+// handlePublicPdfFonts 返回预设字体列表（公开的静态元数据，分享页导出窗口需要）
+func (s *Server) handlePublicPdfFonts(w http.ResponseWriter, r *http.Request) {
+	OK(w, pdfexport.PresetFonts)
+}
+
+// handlePublicSharePdfSettings 返回分享所有者的 PDF 设计（只读，作为客人导出窗口的初始值；客人无法保存）
+func (s *Server) handlePublicSharePdfSettings(w http.ResponseWriter, r *http.Request) {
+	link := s.loadShareLink(chi.URLParam(r, "token"))
+	if link == nil {
+		Fail(w, CodeNotFound, i18n.T(s.cfg.Language, "error.notFound"))
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	var ps models.PdfSetting
+	if err := s.db.Where("user_id = ?", link.OwnerUserID).First(&ps).Error; err != nil {
+		database.EnsureUserSettings(s.db, link.OwnerUserID)
+		s.db.Where("user_id = ?", link.OwnerUserID).First(&ps)
+	}
+	OK(w, ps)
+}
+
+// handlePublicSharePdfExport 按分享范围生成 PDF（纯生成、不落盘；字体/背景图随请求单次使用，不保存）
+func (s *Server) handlePublicSharePdfExport(w http.ResponseWriter, r *http.Request) {
+	link := s.loadShareLink(chi.URLParam(r, "token"))
+	if link == nil {
+		Fail(w, CodeNotFound, i18n.T(s.cfg.Language, "error.notFound"))
+		return
+	}
+	var req pdfRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		Fail(w, CodeBadRequest, i18n.T(s.cfg.Language, "error.badRequest"))
+		return
+	}
+	if msg := validateRange(req.Range, s.cfg.Language); msg != "" {
+		Fail(w, CodeBadRequest, msg)
+		return
+	}
+	bds, _ := s.shareScopeBirthdays(link)
+	entries := entriesForBirthdays(bds, req.Range)
+	res := buildResources(req)
+	data, err := s.pdfGen.Generate(req.Range, entries, req.Settings, time.Now(), res)
 	if err != nil {
 		Fail(w, CodeInternal, err.Error())
 		return

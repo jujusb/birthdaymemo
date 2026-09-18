@@ -10,6 +10,14 @@ import { showConfirm } from '@/composables/useConfirm'
 import { precomputePinyin, matchWithPinyin, type PinyinData } from '@/utils/pinyinInitial'
 import TagFormModal from './TagFormModal.vue'
 import BirthdayFormModal from './BirthdayFormModal.vue'
+import { useAuthStore } from '@/stores/auth'
+
+// readonly: 分享预览 / Guest Mode / guest 账号（隐藏一切写入口）
+// showAge: 年龄显示开关（由 CalendarView 的 🎂 按钮控制，默认显示）
+const props = defineProps<{ readonly?: boolean; showAge?: boolean }>()
+const auth = useAuthStore()
+const effectiveReadonly = computed(() => !!props.readonly || auth.isReadOnly)
+const showAge = computed(() => props.showAge ?? true)
 
 const i18n = useI18nStore()
 const t = i18n.t
@@ -249,6 +257,12 @@ function formatDate(b: BirthdayWithTag): string {
   return `${dateStr} · ${days}d`
 }
 
+// Upcoming age (age they turn on their next birthday); -1 when birth year unknown
+function upcomingAgeOf(b: BirthdayWithTag): number {
+  if (!b.birth_year) return -1
+  return nextDate(b).getFullYear() - b.birth_year
+}
+
 // 默认只显示前 2 个，多的折叠为 +N；展开后显示全部
 const FOLD_TAG_COUNT = 2
 function visibleTags(b: BirthdayWithTag): Tag[] {
@@ -310,11 +324,13 @@ function closeContextMenu() {
 // 标签：右键
 function onTagContextMenu(e: MouseEvent, tag: Tag) {
   e.preventDefault()
+  if (effectiveReadonly.value) return
   openContextMenu(e.clientX, e.clientY, 'tag', tag)
 }
 
 // 标签：长按（移动端）
 function onTagTouchStart(e: TouchEvent, tag: Tag) {
+  if (effectiveReadonly.value) return
   const touch = e.touches[0]
   const x = touch.clientX
   const y = touch.clientY
@@ -329,14 +345,28 @@ function onTagTouchEnd() {
   }
 }
 
+// 生日条目是否可编辑：本人（非共享）恒可编辑；共享需 can_edit（≥1 tag 被授予 edit）
+function canEditBd(b: BirthdayWithTag): boolean {
+  if (!b.shared) return true
+  return b.can_edit ?? false
+}
+// 生日条目是否可删除：仅本人（非共享）；被委托人不可删除
+function canDeleteBd(b: BirthdayWithTag): boolean {
+  return !b.shared
+}
+
 // 生日条目：右键
 function onBdContextMenu(e: MouseEvent, b: BirthdayWithTag) {
   e.preventDefault()
+  if (effectiveReadonly.value) return
+  if (!canEditBd(b) && !canDeleteBd(b)) return
   openContextMenu(e.clientX, e.clientY, 'birthday', undefined, b)
 }
 
 // 生日条目：长按
 function onBdTouchStart(e: TouchEvent, b: BirthdayWithTag) {
+  if (effectiveReadonly.value) return
+  if (!canEditBd(b) && !canDeleteBd(b)) return
   const touch = e.touches[0]
   const x = touch.clientX
   const y = touch.clientY
@@ -429,7 +459,7 @@ onBeforeUnmount(() => {
     <div class="sidebar-section">
       <div class="section-head row between">
         <span class="title">{{ t('list.filterTags') }}</span>
-        <button class="small" @click="openNew" :title="t('tag.new')">+</button>
+        <button v-if="!effectiveReadonly" class="small" @click="openNew" :title="t('tag.new')">+</button>
       </div>
       <div class="tag-filter-grid">
         <label
@@ -456,7 +486,7 @@ onBeforeUnmount(() => {
       <button v-if="ui.selectedTagIds.length > 0" class="clear-btn" @click="clearTags">
         {{ t('list.allTags') }}
       </button>
-      <span class="hint">右键 / 长按标签可修改或删除</span>
+      <span v-if="!effectiveReadonly" class="hint">{{ t('list.rowHint') }}</span>
     </div>
 
     <!-- 3. 生日列表 -->
@@ -504,6 +534,7 @@ onBeforeUnmount(() => {
             <div class="bd-info grow">
               <div class="bd-name-row">
                 <span class="bd-name">{{ b.name }}</span>
+                <span v-if="b.shared" class="shared-badge" :title="b.owner_username">👥{{ b.owner_username }}</span>
                 <div
                   v-if="b.tags && b.tags.length > 0"
                   class="bd-tags"
@@ -519,12 +550,17 @@ onBeforeUnmount(() => {
                   <span v-if="hiddenTagCount(b) > 0" class="mini-tag more-chip">+{{ hiddenTagCount(b) }}</span>
                 </div>
                 <span class="bd-date">{{ formatDate(b) }}</span>
+                <span
+                  v-if="showAge && upcomingAgeOf(b) > 0"
+                  class="bd-age"
+                  :title="t('common.turnsAge', { age: upcomingAgeOf(b) })"
+                >{{ upcomingAgeOf(b) }}</span>
               </div>
             </div>
           </div>
         </div>
       </div>
-      <span class="hint">右键 / 长按条目可修改或删除</span>
+      <span v-if="!effectiveReadonly" class="hint">{{ t('list.rowHint') }}</span>
     </div>
 
     <!-- 上下文菜单（fixed 定位，可超出 sidebar overflow） -->
@@ -535,16 +571,24 @@ onBeforeUnmount(() => {
       @click.stop
       @contextmenu.prevent
     >
-      <button class="context-item" @click="onMenuEdit">
+      <button
+        v-if="contextMenu.type === 'tag' || (contextMenu.birthday && canEditBd(contextMenu.birthday))"
+        class="context-item"
+        @click="onMenuEdit"
+      >
         <span class="ctx-icon">✎</span>{{ t('common.edit') }}
       </button>
-      <button class="context-item danger" @click="onMenuDelete">
+      <button
+        v-if="contextMenu.type === 'tag' || (contextMenu.birthday && canDeleteBd(contextMenu.birthday))"
+        class="context-item danger"
+        @click="onMenuDelete"
+      >
         <span class="ctx-icon">🗑</span>{{ t('common.delete') }}
       </button>
     </div>
 
-    <TagFormModal v-if="showTagModal" :tag="editingTag" @close="showTagModal = false" @saved="onTagSaved" />
-    <BirthdayFormModal v-if="showBirthdayModal" :birthday="editingBirthday" @close="showBirthdayModal = false" @saved="onBirthdaySaved" />
+    <TagFormModal v-if="showTagModal && !effectiveReadonly" :tag="editingTag" @close="showTagModal = false" @saved="onTagSaved" />
+    <BirthdayFormModal v-if="showBirthdayModal && !effectiveReadonly" :birthday="editingBirthday" @close="showBirthdayModal = false" @saved="onBirthdaySaved" />
   </aside>
 </template>
 
@@ -633,6 +677,15 @@ onBeforeUnmount(() => {
 }
 .search-clear:hover {
   color: var(--color-danger);
+}
+.shared-badge {
+  font-size: 10px;
+  color: var(--color-primary);
+  border: 1px solid var(--color-primary);
+  border-radius: 8px;
+  padding: 0 5px;
+  margin-left: 6px;
+  white-space: nowrap;
 }
 
 /* 标签 */
@@ -844,6 +897,18 @@ onBeforeUnmount(() => {
   flex-shrink: 0;
   margin-left: auto;
 }
+.bd-age {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--color-text-muted);
+  background: var(--color-bg-sunken);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: 0 5px;
+  line-height: 1.5;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
 .bd-tags {
   display: flex;
   flex-wrap: nowrap;
@@ -926,6 +991,13 @@ onBeforeUnmount(() => {
     border-right: none;
     border-bottom: 1px solid var(--color-border);
     max-height: 320px;
+  }
+}
+@media print {
+  /* Printing is handled by the calendar / share views; the sidebar
+     duplicates that info and only wastes paper. */
+  .sidebar {
+    display: none !important;
   }
 }
 </style>

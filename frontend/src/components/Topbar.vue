@@ -62,6 +62,7 @@ async function onLogout() {
   <header class="topbar">
     <div class="left">
       <span class="welcome">{{ t('topbar.welcome', { name: auth.user?.username ?? '' }) }}</span>
+      <span v-if="auth.isGuest" class="guest-badge">👁️ {{ t('role.guest') }}</span>
       <span class="upcoming" :class="{ none: upcomingCount === 0 }">
         <span class="dot" v-if="upcomingCount > 0"></span>
         {{ upcomingText }}
@@ -80,11 +81,11 @@ async function onLogout() {
         <span aria-hidden="true">📅</span>
         <span class="nav-label">{{ t('topbar.calendar') }}</span>
       </RouterLink>
-      <RouterLink to="/export" class="nav-link icon-link" :title="t('export.title')" aria-label="export">
+      <RouterLink v-if="!auth.isGuest" to="/export" class="nav-link icon-link" :title="t('export.title')" aria-label="export">
         <span aria-hidden="true">📄</span>
         <span class="nav-label">{{ t('export.title') }}</span>
       </RouterLink>
-      <RouterLink to="/settings" class="nav-link icon-link" :title="t('topbar.settings')" aria-label="settings">
+      <RouterLink v-if="!auth.isGuest" to="/settings" class="nav-link icon-link" :title="t('topbar.settings')" aria-label="settings">
         <span aria-hidden="true">⚙️</span>
         <span class="nav-label">{{ t('topbar.settings') }}</span>
       </RouterLink>
@@ -136,6 +137,14 @@ async function onLogout() {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+.guest-badge {
+  font-size: 11px;
+  color: var(--color-primary);
+  border: 1px solid var(--color-primary);
+  border-radius: 10px;
+  padding: 1px 8px;
+  white-space: nowrap;
 }
 .upcoming {
   display: inline-flex;

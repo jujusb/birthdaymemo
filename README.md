@@ -16,6 +16,7 @@
 - **PDF 导出** - 横版 A4 日历，支持自定义背景、表格特效、5 种预设字体
 - **邮件提醒** - SMTP 邮件发送，支持自定义模板与变量替换
 - **多用户系统** - 管理员/普通用户角色分离，数据完全隔离
+- **访客与分享** - 只读 `guest` 角色、不可猜测的分享链接（`#/s/:token`，支持过期+撤销）、按标签委托编辑（可编辑/新建，不可删除）、访客预览开关与展示模式
 - **安全防护** - bcrypt 密码加密、图形验证码、IP 登录限流、操作审计日志
 - **多语言** - 内置中英双语，支持管理员扩展语言包
 - **主题切换** - 深色/浅色模式，10 种预设主题色
@@ -75,6 +76,77 @@ EOF
 sudo systemctl daemon-reload
 sudo systemctl enable birthdaymemo
 sudo systemctl start birthdaymemo
+```
+
+### Docker Compose
+
+无需交互式配置向导，所有配置写在 `compose.yaml` 的环境变量中：
+
+```bash
+docker compose up -d --build
+```
+
+| 环境变量 | 默认值 | 说明 |
+|----------|--------|------|
+| `BIRTHDAYMEMO_LANGUAGE` | `en` | 控制台语言（zh/en） |
+| `BIRTHDAYMEMO_LISTEN_ADDRESS` | `0.0.0.0` | 容器内监听地址，保持 `0.0.0.0` 即可 |
+| `BIRTHDAYMEMO_LISTEN_PORT` | `8080` | 容器内监听端口，需与端口映射的容器侧一致 |
+| `BIRTHDAYMEMO_RETENTION_DAYS` | `14` | 操作日志保留天数，0 为永久保留 |
+| `BIRTHDAYMEMO_EXTERNAL_URL` | 空 | 外部访问地址（带 http(s)://），用于邮件中的链接 |
+| `BIRTHDAYMEMO_ADMIN_USER` | `admin` | 首次启动创建的管理员用户名（3-10 字符） |
+| `BIRTHDAYMEMO_ADMIN_PASSWORD` | 空 | 管理员密码（至少 8 位，含大小写字母和数字）。为空或不合规时自动生成随机密码并打印到容器日志中 |
+| `HOST_PORT` | `8080` | 宿主机映射端口（编辑服务） |
+| `TZ` | `UTC` | 时区，邮件提醒按本地时间调度 |
+
+首次启动后查看管理员密码（仅当自动生成时）：
+
+```bash
+docker compose logs birthdaymemo | grep -i password
+```
+
+之后每次启动以环境变量为准并写回 `config.json`。登录后请及时修改密码。
+
+#### 只读分享服务（birthdaymemo-guest）
+
+compose 中还有第二个服务 `birthdaymemo-guest`，与编辑服务**共享同一个 `./data`**（同一 SQLite 文件），但以 `--guest-only` 只读模式运行：只挂载公开分享接口（`GET /api/public/s/...`、语言资源）与分享页本身；登录/写接口/管理接口**在该进程中根本不存在**，其他服务端路径（包括登录页、管理页）一律返回 `404`——分享页用 hash 路由（`/#/s/...`），浏览器实际只请求 `/` 和静态资源文件，所以锁定后分享链接不受任何影响。提醒调度器与日志清理也不运行（无重复邮件、无写入冲突，SQLite 另有 `busy_timeout` 兜底）。
+
+典型接线：公开域名指向分享服务，编辑域名留在 VPN/防火墙后面（本项目不提供 VPN，需自行限制）：
+
+| 环境变量 | 默认值 | 说明 |
+|----------|--------|------|
+| `GUEST_HOST_PORT` | `8081` | 分享服务宿主机映射端口 |
+| `BIRTHDAYMEMO_GUEST_PORT` | `8081` | 分享服务容器内监听端口，需与端口映射的容器侧一致 |
+| `BIRTHDAYMEMO_GUEST_EXTERNAL_URL` | 空 | **公开**外部访问地址（带 http(s)://），分享链接按此生成，例如 `https://view.example.com` |
+
+注意：
+
+- 全新数据卷请**先启动编辑服务**完成管理员初始化，再启动分享服务（分享服务在空库下会直接报错退出，不会创建账号）。
+- 分享服务没有 `BIRTHDAYMEMO_ADMIN_*` 变量——访客进程绝不创建用户，也不写回 `config.json`。
+- 作为第二层防护，建议在**你自己的反向代理**上对公开域名做路径白名单（应用层 `--guest-only` 已是第一层）：
+
+```nginx
+# nginx：公开域名仅放行只读分享路径
+location ~ ^/api/(public/s/|i18n|languages) { proxy_pass http://birthdaymemo-guest:8081; }
+location /api/ { return 404; }
+location / { proxy_pass http://birthdaymemo-guest:8081; }
+```
+
+```caddy
+# Caddy：同上
+view.example.com {
+    @share {
+        path /api/public/s/* /api/i18n* /api/languages*
+    }
+    handle @share {
+        reverse_proxy birthdaymemo-guest:8081
+    }
+    handle /api/* {
+        respond 404
+    }
+    handle {
+        reverse_proxy birthdaymemo-guest:8081
+    }
+}
 ```
 
 ### 命令行重置管理员密码
@@ -172,6 +244,23 @@ SMTP 配置和 PDF 设置通过管理员后台页面配置，存储在数据库�
 | `POST` | `/api/tags` | 是 | 创建标签。Body: `{name, color}` |
 | `PUT` | `/api/tags/:id` | 是 | 更新标签 |
 | `DELETE` | `/api/tags/:id` | 是 | 删除标签 |
+
+### 只读分享与委托编辑
+
+| 方法 | 路径 | 认证 | 说明 |
+|------|------|------|------|
+| `GET` | `/api/share-links` | 是（guest 除外） | 我的分享链接列表 |
+| `POST` | `/api/share-links` | 是（guest 除外） | 创建分享链接。Body: `{name, scope_mode: all\|tags, tag_ids, expires_at}` |
+| `DELETE` | `/api/share-links/:id` | 是（guest 除外） | 撤销分享链接 |
+| `POST` | `/api/share-links/:id/rotate` | 是（guest 除外） | 重新生成链接令牌 |
+| `GET` | `/api/grants` | 是 | 委托授权列表。Params: `type=owned\|received` |
+| `POST` | `/api/grants` | 是（guest 除外） | 授予标签权限。Body: `{grantee_username, tag_id, permission: view\|edit}`。被授予 edit 的用户可编辑带该标签的生日（≥1 个即授命）、在该标签下新建，但不可删除 |
+| `PUT` | `/api/grants/:id` | 是（guest 除外） | 切换 view/edit |
+| `DELETE` | `/api/grants/:id` | 是 | 删除授权（owner、被授予人或管理员） |
+| `GET` | `/api/public/s/:token` | 否 | 免登录只读分享（含标签筛选后的生日） |
+| `GET` | `/api/public/s/:token/calendar?view=month\|year` | 否 | 免登录只读日历 |
+
+角色说明：`admin` 全部权限；`user` 管理自己的数据并可分享/委托；`guest` 只读（写接口一律 403，前端隐藏编辑入口）。前端另有访客预览开关（👁️）与免登录展示页 `#/s/:token`（含大字体展示模式）。
 
 ### PDF 导出
 
@@ -355,6 +444,7 @@ A self-hosted birthday reminder application with calendar views, tag management,
 - **PDF Export** - Landscape A4 calendar with custom backgrounds, table effects, 5 preset fonts
 - **Email Reminders** - SMTP email sending with customizable templates and variable substitution
 - **Multi-User System** - Admin/User role separation with complete data isolation
+- **Guest & Sharing** - Read-only `guest` role, unguessable share links (`#/s/:token`, expiry + revoke), tag-scoped delegated editing (edit/create, never delete), guest-preview toggle and kiosk display mode
 - **Security** - bcrypt password hashing, captcha, IP-based login rate limiting, audit logs
 - **Multi-Language** - Built-in English/Chinese, extensible language packs
 - **Theme Switching** - Dark/Light mode with 10 preset theme colors
@@ -416,6 +506,77 @@ sudo systemctl enable birthdaymemo
 sudo systemctl start birthdaymemo
 ```
 
+### Docker Compose
+
+No interactive setup wizard — everything is configured via environment variables in `compose.yaml`:
+
+```bash
+docker compose up -d --build
+```
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `BIRTHDAYMEMO_LANGUAGE` | `en` | Console language (zh/en) |
+| `BIRTHDAYMEMO_LISTEN_ADDRESS` | `0.0.0.0` | Listen address inside the container, keep `0.0.0.0` |
+| `BIRTHDAYMEMO_LISTEN_PORT` | `8080` | Listen port inside the container, must match the container side of the port mapping |
+| `BIRTHDAYMEMO_RETENTION_DAYS` | `14` | Operation log retention days, 0 for permanent |
+| `BIRTHDAYMEMO_EXTERNAL_URL` | empty | External base URL (with http(s)://) used for links in emails |
+| `BIRTHDAYMEMO_ADMIN_USER` | `admin` | Admin username created on first start (3-10 chars) |
+| `BIRTHDAYMEMO_ADMIN_PASSWORD` | empty | Admin password (min 8 chars, must contain uppercase, lowercase and digits). If empty/invalid, a random compliant password is generated and printed to the container logs |
+| `HOST_PORT` | `8080` | Host port mapping (edit service) |
+| `TZ` | `UTC` | Timezone, reminder emails are scheduled in local time |
+
+Show the generated admin password after first start (only when auto-generated):
+
+```bash
+docker compose logs birthdaymemo | grep -i password
+```
+
+On every start, environment variables win and are written back to `config.json`. Change the password after logging in.
+
+#### Read-only share service (birthdaymemo-guest)
+
+Compose ships a second service, `birthdaymemo-guest`, sharing the same `./data` (same SQLite file) but running in `--guest-only` read-only mode: it mounts only the public share endpoints (`GET /api/public/s/...`, language resources) and the share page itself. Login, write, and admin APIs **don't exist in that process**, and every other server-side path (including login/admin pages) returns `404` — the share page uses hash routing (`/#/s/...`), so browsers only ever request `/` plus static assets and share links keep working. The reminder scheduler and log cleanup don't run either (no duplicate emails, no write contention, plus a SQLite `busy_timeout` safety net).
+
+Typical wiring: point your public hostname at the share service and keep the edit hostname behind your VPN/firewall (no VPN is provided — restrict it yourself):
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `GUEST_HOST_PORT` | `8081` | Host port mapping (share service) |
+| `BIRTHDAYMEMO_GUEST_PORT` | `8081` | Listen port inside the share container, must match the container side of the port mapping |
+| `BIRTHDAYMEMO_GUEST_EXTERNAL_URL` | empty | **Public** base URL (with http(s)://) used when building share-link URLs, e.g. `https://view.example.com` |
+
+Notes:
+
+- On a fresh volume, start the **edit service first** so the admin account and database exist; the share service exits with an error on an empty database instead of creating accounts.
+- The share service has no `BIRTHDAYMEMO_ADMIN_*` variables — the guest process never creates users and never writes back `config.json`.
+- As a second layer (the `--guest-only` app mode is the first), put a path allowlist on **your own reverse proxy** for the public hostname:
+
+```nginx
+# nginx: only allow read-only share paths on the public hostname
+location ~ ^/api/(public/s/|i18n|languages) { proxy_pass http://birthdaymemo-guest:8081; }
+location /api/ { return 404; }
+location / { proxy_pass http://birthdaymemo-guest:8081; }
+```
+
+```caddy
+# Caddy: same idea
+view.example.com {
+    @share {
+        path /api/public/s/* /api/i18n* /api/languages*
+    }
+    handle @share {
+        reverse_proxy birthdaymemo-guest:8081
+    }
+    handle /api/* {
+        respond 404
+    }
+    handle {
+        reverse_proxy birthdaymemo-guest:8081
+    }
+}
+```
+
 ### Reset Admin Password via CLI
 
 ```bash
@@ -474,6 +635,7 @@ After admin creates an account, user can:
 - **Tag Management** - Create custom tags with colors
 - **PDF Export** - Custom backgrounds, table effects, fonts, export landscape A4 calendar
 - **Personal Settings** - Change password, language, theme, reminder preferences
+- **Sharing** - Read-only share links and tag-scoped delegated editing
 
 ### Reminder Options
 

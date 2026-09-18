@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import * as api from '@/api'
 import type { Tag } from '@/api/types'
 import { ApiError } from '@/api/client'
@@ -25,8 +25,16 @@ const color = ref(props.tag?.color ?? PRESET_COLORS[0])
 const saving = ref(false)
 
 const isEdit = computed(() => !!props.tag)
-const nameCount = computed(() => name.value.length)
-const NAME_LIMIT = 10
+const nameCount = computed(() => [...name.value].length)
+// 标签名称上限来自服务端配置（默认 20，可通过环境变量调整）；加载失败时回退 20
+const nameLimit = ref(20)
+
+onMounted(async () => {
+  try {
+    const s = await api.getSettings()
+    if (s.tag_name_max_length > 0) nameLimit.value = s.tag_name_max_length
+  } catch { /* 回退默认值 */ }
+})
 
 function close() {
   emit('close')
@@ -38,8 +46,8 @@ async function save() {
     toast.error(t('common.required'))
     return
   }
-  if (trimmed.length > NAME_LIMIT) {
-    toast.error(t('tag.nameLimit'))
+  if ([...trimmed].length > nameLimit.value) {
+    toast.error(t('tag.nameLimit', { max: nameLimit.value }))
     return
   }
   saving.value = true
@@ -71,10 +79,10 @@ async function save() {
         <input
           v-model="name"
           type="text"
-          :maxlength="NAME_LIMIT"
+          :maxlength="nameLimit"
           :placeholder="t('tag.name')"
         />
-        <span class="hint">{{ nameCount }} / {{ NAME_LIMIT }} · {{ t('tag.nameLimit') }}</span>
+        <span class="hint">{{ nameCount }} / {{ nameLimit }} · {{ t('tag.nameLimit', { max: nameLimit }) }}</span>
       </div>
 
       <div class="col mt-16">

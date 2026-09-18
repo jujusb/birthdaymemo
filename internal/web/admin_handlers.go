@@ -27,6 +27,7 @@ func (s *Server) listUsers(w http.ResponseWriter, r *http.Request) {
 type createUserRequest struct {
 	Username string `json:"username"`
 	Password string `json:"password"`
+	Role     string `json:"role"` // user（默认）| guest（只读）| admin
 }
 
 func (s *Server) createUser(w http.ResponseWriter, r *http.Request) {
@@ -56,10 +57,18 @@ func (s *Server) createUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	admin := userFromContext(r)
+	role := strings.TrimSpace(req.Role)
+	if role == "" {
+		role = models.RoleUser
+	}
+	if role != models.RoleUser && role != models.RoleGuest && role != models.RoleAdmin {
+		Fail(w, CodeBadRequest, i18n.T(s.cfg.Language, "error.badRequest"))
+		return
+	}
 	u := models.User{
 		Username:           req.Username,
 		PasswordHash:       hash,
-		Role:               models.RoleUser,
+		Role:               role,
 		MustChangePassword: true,
 		Language:           s.cfg.Language,
 		Theme:              models.ThemeLight,
@@ -97,6 +106,9 @@ func (s *Server) deleteUser(w http.ResponseWriter, r *http.Request) {
 	}
 	s.db.Delete(&u)
 	auth.DestroyUserSessions(u.ID)
+	// 级联清理该用户的分享链接与委托授权
+	s.db.Where("owner_user_id = ?", u.ID).Delete(&models.ShareLink{})
+	s.db.Where("owner_user_id = ? OR grantee_user_id = ?", u.ID, u.ID).Delete(&models.TagGrant{})
 	audit.Log(s.db, admin.ID, admin.Username, "delete_user", u.Username, ipFromContext(r))
 	logger.Info("admin: user '%s' deleted by '%s' ip=%s", u.Username, admin.Username, ipFromContext(r))
 	OK(w, nil)

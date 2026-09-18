@@ -88,6 +88,13 @@ button.primary {
 }
 button.primary:hover { background: var(--color-primary-hover); }
 
+/* 开关式按钮激活态（访客预览 / 年龄显示等 toggle）：蓝色高亮 */
+button.active {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  color: #fff;
+}
+
 button.danger { color: var(--color-danger); border-color: var(--color-danger); }
 button.danger:hover { background: var(--color-danger); color: white; }
 
@@ -144,6 +151,23 @@ label { display: block; margin-bottom: 4px; color: var(--color-text-muted); font
     width: calc(100vw - 24px);
     max-width: calc(100vw - 24px);
     padding: 16px;
+  }
+}
+
+/* Printing: hide app chrome (topbar) and let scroll containers expand
+   so calendar / share views print in full. Views hide their own
+   interactive controls via the .no-print helper class. */
+@media print {
+  .topbar {
+    display: none !important;
+  }
+  .layout {
+    height: auto !important;
+    display: block !important;
+  }
+  .content {
+    overflow: visible !important;
+    height: auto !important;
   }
 }
 

@@ -9,6 +9,9 @@ export const useAuthStore = defineStore('auth', () => {
 
   const isAuthenticated = computed(() => !!user.value)
   const isAdmin = computed(() => user.value?.role === 'admin')
+  const isGuest = computed(() => user.value?.role === 'guest')
+  // 只读：guest 登录账号不可写；匿名分享页另由 ShareView 控制
+  const isReadOnly = computed(() => user.value?.role === 'guest')
   const mustChangePassword = computed(() => !!user.value?.must_change_password)
 
   async function fetchMe() {
@@ -52,6 +55,8 @@ export const useAuthStore = defineStore('auth', () => {
     loading,
     isAuthenticated,
     isAdmin,
+    isGuest,
+    isReadOnly,
     mustChangePassword,
     fetchMe,
     login,

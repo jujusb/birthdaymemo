@@ -1,11 +1,26 @@
 import { createRouter, createWebHashHistory, type RouteRecordRaw } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
+import { isGuestOnlyMode } from '@/utils/guestOnly'
 
 const routes: RouteRecordRaw[] = [
   {
     path: '/login',
     name: 'login',
     component: () => import('@/views/LoginView.vue'),
+    meta: { public: true },
+  },
+  {
+    path: '/s/:token',
+    name: 'share',
+    component: () => import('@/views/ShareView.vue'),
+    meta: { public: true },
+  },
+  {
+    // 分享页的导出窗口：复用 ExportView（shareToken 模式：公开数据、无保存）
+    path: '/s/:token/export',
+    name: 'share-export',
+    component: () => import('@/views/ExportView.vue'),
+    props: (route) => ({ shareToken: String(route.params.token || '') }),
     meta: { public: true },
   },
   {
@@ -35,6 +50,12 @@ const routes: RouteRecordRaw[] = [
       { path: 'logs', name: 'admin-logs', component: () => import('@/views/admin/OperationLogsView.vue') },
     ],
   },
+  {
+    path: '/not-available',
+    name: 'guest-blocked',
+    component: () => import('@/views/GuestBlockedView.vue'),
+    meta: { public: true },
+  },
   { path: '/:pathMatch(.*)*', redirect: '/' },
 ]
 
@@ -44,6 +65,14 @@ const router = createRouter({
 })
 
 router.beforeEach((to) => {
+  // `--guest-only` backend: only public share pages exist. Everything else
+  // (login, calendar, settings, admin, ...) must not be accessible.
+  // This check runs first so guest mode never redirects to the login page
+  // (which itself is blocked).
+  if (isGuestOnlyMode()) {
+    if (to.name === 'share' || to.name === 'share-export' || to.name === 'guest-blocked') return true
+    return { name: 'guest-blocked' }
+  }
   const auth = useAuthStore()
   // 已登录用户访问登录页 → 跳转主页
   if (to.name === 'login' && auth.isAuthenticated) {
@@ -56,6 +85,10 @@ router.beforeEach((to) => {
   }
   if (auth.mustChangePassword && to.name !== 'change-password') {
     return { name: 'change-password' }
+  }
+  // guest 只读账号：不可访问导出（写接口）与管理后台
+  if (auth.isGuest && (to.name === 'export' || to.path.startsWith('/admin'))) {
+    return { name: 'calendar' }
   }
   // 管理员路由检查（无权限跳回首页）
   if (to.path.startsWith('/admin') && !auth.isAdmin) {

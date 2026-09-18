@@ -23,6 +23,8 @@ type settingsResponse struct {
 	SelfBirthYear  int `json:"self_birth_year"`
 	SelfBirthMonth int `json:"self_birth_month"`
 	SelfBirthDay   int `json:"self_birth_day"`
+	// 标签名称最大字符数（服务端配置，可通过环境变量调整）
+	TagNameMaxLength int `json:"tag_name_max_length"`
 }
 
 // settingsRequest 用户设置请求
@@ -57,9 +59,10 @@ func (s *Server) getSettings(w http.ResponseWriter, r *http.Request) {
 		PendingEmail:   u.PendingEmail,
 		TopbarRange:    u.TopbarRangeDays,
 		AvailableLangs: i18n.Available(),
-		SelfBirthYear:  u.SelfBirthYear,
-		SelfBirthMonth: u.SelfBirthMonth,
-		SelfBirthDay:   u.SelfBirthDay,
+		SelfBirthYear:    u.SelfBirthYear,
+		SelfBirthMonth:   u.SelfBirthMonth,
+		SelfBirthDay:     u.SelfBirthDay,
+		TagNameMaxLength: tagNameLimit(s.cfg),
 	})
 }
 
@@ -235,6 +238,7 @@ func (s *Server) updatePdfSettings(w http.ResponseWriter, r *http.Request) {
 	ps.TableOpacity = clamp(req.TableOpacity, 0, 100)
 	ps.TableBgColor = req.TableBgColor
 	ps.TextColor = req.TextColor
+	ps.ShowAge = req.ShowAge
 	s.db.Save(&ps)
 	OK(w, ps)
 }

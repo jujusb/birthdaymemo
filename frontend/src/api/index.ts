@@ -4,6 +4,9 @@ import type {
   Birthday,
   BirthdayWithTag,
   Tag,
+  ShareLink,
+  TagGrant,
+  PublicShareData,
   ReminderSetting,
   PdfSetting,
   PdfRequest,
@@ -91,10 +94,54 @@ export const listPresetFonts = () => get<PresetFont[]>('/api/pdf/fonts')
 export const pdfPreview = (req: PdfRequest) => post<PdfPreviewData>('/api/pdf/preview', req)
 export const pdfExport = (req: PdfRequest) => postRaw('/api/pdf/export', req)
 
+// --- 只读分享链接（owner 管理） ---
+export const listShareLinks = () => get<ShareLink[]>('/api/share-links')
+export const createShareLink = (b: {
+  name: string
+  scope_mode: 'all' | 'tags'
+  tag_ids?: number[]
+  expires_at?: string | null
+  slug?: string
+}) => post<ShareLink>('/api/share-links', b)
+export const updateShareLink = (
+  id: number,
+  b: { slug?: string; name?: string; scope_mode?: 'all' | 'tags'; tag_ids?: number[] },
+) => put<ShareLink>(`/api/share-links/${id}`, b)
+export const deleteShareLink = (id: number) => del<void>(`/api/share-links/${id}`)
+export const rotateShareLink = (id: number) => post<ShareLink>(`/api/share-links/${id}/rotate`)
+
+// --- 标签委托授权 ---
+export const listGrants = (type?: 'owned' | 'received') =>
+  get<TagGrant[]>(type ? `/api/grants?type=${type}` : '/api/grants')
+export const createGrant = (grantee_username: string, tag_id: number, permission: 'view' | 'edit') =>
+  post<TagGrant>('/api/grants', { grantee_username, tag_id, permission })
+export const updateGrant = (id: number, permission: 'view' | 'edit') =>
+  put<TagGrant>(`/api/grants/${id}`, { permission })
+export const deleteGrant = (id: number) => del<void>(`/api/grants/${id}`)
+
+// --- 公开分享（免登录） ---
+export const getPublicShare = (token: string) =>
+  get<PublicShareData>(`/api/public/s/${encodeURIComponent(token)}`)
+export const getPublicShareCalendarMonth = (token: string, year: number, month: number) =>
+  get<CalendarMonthData>(
+    `/api/public/s/${encodeURIComponent(token)}/calendar?view=month&year=${year}&month=${month}`,
+  )
+export const getPublicShareCalendarYear = (token: string, year: number) =>
+  get<CalendarYearData>(
+    `/api/public/s/${encodeURIComponent(token)}/calendar?view=year&year=${year}`,
+  )
+
+// --- 公开分享的 PDF 导出（免登录，仅限分享范围内的数据；只读/纯生成） ---
+export const getPublicPdfFonts = () => get<PresetFont[]>('/api/public/pdf/fonts')
+export const getPublicSharePdfSettings = (token: string) =>
+  get<PdfSetting>(`/api/public/s/${encodeURIComponent(token)}/pdf-settings`)
+export const publicSharePdfExport = (token: string, req: PdfRequest) =>
+  postRaw(`/api/public/s/${encodeURIComponent(token)}/pdf/export`, req)
+
 // --- 管理员：用户 ---
 export const listUsers = () => get<User[]>('/api/admin/users')
-export const createUser = (username: string, password: string) =>
-  post<User>('/api/admin/users', { username, password })
+export const createUser = (username: string, password: string, role?: 'user' | 'guest' | 'admin') =>
+  post<User>('/api/admin/users', { username, password, role })
 export const deleteUser = (id: number) => del<void>(`/api/admin/users/${id}`)
 export const resetUserPassword = (id: number, password: string) =>
   post<void>(`/api/admin/users/${id}/reset-password`, { password })

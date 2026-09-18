@@ -10,7 +10,7 @@ export interface User {
   id: number
   username: string
   email: string
-  role: 'admin' | 'user'
+  role: 'admin' | 'user' | 'guest'
   must_change_password: boolean
   language: string
   theme: 'dark' | 'light'
@@ -83,6 +83,7 @@ export interface PdfSetting {
   cell_border_color: string
   cell_border_opacity: number
   text_color: string
+  show_age: boolean // 日历姓名旁显示即将到的年龄与出生年份
 }
 
 // PDF 预设字体
@@ -146,6 +147,9 @@ export interface CalendarDayBirthday {
   age: number
   upcoming_age: number
   tags: Tag[]
+  shared?: boolean
+  can_edit?: boolean
+  owner_username?: string
 }
 
 export interface CalendarMonthData {
@@ -212,6 +216,7 @@ export interface SettingsData {
   self_birth_year: number
   self_birth_month: number
   self_birth_day: number
+  tag_name_max_length: number // 标签名称最大字符数（服务端配置）
 }
 
 // 邮箱确认状态
@@ -232,13 +237,17 @@ export interface UpcomingBirthday {
   gender: 'male' | 'female' | 'none'
   color: string
   tags: Tag[]
+  shared?: boolean
+  can_edit?: boolean
+  owner_username?: string
 }
 
 // PDF 预览/导出
 // 注：year 不从前端传入，由后端使用 time.Now().Year() 自动填充
 export interface PdfRange {
-  type: 'month' | 'year'
+  type: 'month' | 'year' | 'school_year'
   month?: number
+  lang?: string // 前端 UI 语言，后端据此本地化星期表头/脚注/默认标题
 }
 
 export interface PdfRequest {
@@ -261,4 +270,52 @@ export interface PdfPreviewData {
 // 生日列表带 tags（多标签）
 export interface BirthdayWithTag extends Birthday {
   tags: Tag[]
+  shared?: boolean
+  can_edit?: boolean
+  owner_username?: string
+}
+
+// 只读分享链接
+export interface ShareLink {
+  id: number
+  name: string
+  scope_mode: 'all' | 'tags'
+  tag_ids: number[]
+  expires_at: string | null
+  revoked: boolean
+  slug: string
+  url: string
+  created_at: string
+}
+
+// 标签委托授权
+export interface TagGrant {
+  id: number
+  tag_id: number
+  tag_name: string
+  owner_username: string
+  grantee_username: string
+  permission: 'view' | 'edit'
+}
+
+// 公开分享数据（免登录）
+export interface PublicBirthday {
+  id: number
+  name: string
+  gender: 'male' | 'female' | 'none'
+  color: string
+  birth_year: number
+  birth_month: number
+  birth_day: number
+  age: number // 当前年龄，-1=未知年份
+  upcoming_age: number // 下一个生日后的年龄，-1=未知年份
+  days_until: number
+  tags: Tag[]
+}
+
+export interface PublicShareData {
+  name: string
+  expires_at: string | null
+  tags: Tag[]
+  birthdays: PublicBirthday[]
 }

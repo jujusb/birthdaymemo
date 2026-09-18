@@ -79,7 +79,7 @@ func (b Birthday) UpcomingAge(now time.Time) int {
 type Tag struct {
 	ID        uint      `json:"id" gorm:"primaryKey"`
 	UserID    uint      `json:"user_id" gorm:"index;not null"`
-	Name      string    `json:"name" gorm:"size:10;not null"` // 限制10字符
+	Name      string    `json:"name" gorm:"size:100;not null"` // 上限由服务端配置 tag_name_max_length 约束（默认20，最大100）
 	Color     string    `json:"color" gorm:"size:20;not null;default:#4A90D9"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`

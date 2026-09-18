@@ -16,14 +16,17 @@ type monthCell struct {
 }
 
 type birthdayInCell struct {
-	ID          uint         `json:"id"`
-	Name        string       `json:"name"`
-	Gender      string       `json:"gender"`
-	Color       string       `json:"color"`
-	Day         int          `json:"day"`          // 生日日期（几号）
-	Age         int          `json:"age"`          // 当前年龄，-1=未知
-	UpcomingAge int          `json:"upcoming_age"` // 即将到来的生日后的年龄
-	Tags        []models.Tag `json:"tags"`
+	ID            uint         `json:"id"`
+	Name          string       `json:"name"`
+	Gender        string       `json:"gender"`
+	Color         string       `json:"color"`
+	Day           int          `json:"day"`          // 生日日期（几号）
+	Age           int          `json:"age"`          // 当前年龄，-1=未知
+	UpcomingAge   int          `json:"upcoming_age"` // 即将到来的生日后的年龄
+	Tags          []models.Tag `json:"tags"`
+	Shared        bool         `json:"shared"`
+	CanEdit       bool         `json:"can_edit"`
+	OwnerUsername string       `json:"owner_username,omitempty"`
 }
 
 // monthViewData 月视图数据
@@ -73,9 +76,21 @@ func (s *Server) handleCalendar(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) monthView(w http.ResponseWriter, r *http.Request, uid uint, year, month int) {
-	var bds []models.Birthday
-	s.db.Where("user_id = ? AND birth_month = ?", uid, month).Order("birth_day asc").Find(&bds)
+	bds, err := visibleBirthdays(s.db, uid)
+	if err != nil {
+		Fail(w, CodeInternal, i18n.T(s.cfg.Language, "error.internal"))
+		return
+	}
+	// 仅保留本月
+	filtered := bds[:0]
+	for _, b := range bds {
+		if b.BirthMonth == month {
+			filtered = append(filtered, b)
+		}
+	}
+	bds = filtered
 	tagsByBid := s.birthdaysTagsMap(uid, bds)
+	ownerNames := s.birthdayOwnerNames(bds)
 	now := time.Now()
 
 	out := make([]birthdayInCell, 0, len(bds))
@@ -84,15 +99,19 @@ func (s *Server) monthView(w http.ResponseWriter, r *http.Request, uid uint, yea
 		if tags == nil {
 			tags = []models.Tag{}
 		}
+		shared := b.UserID != uid
 		out = append(out, birthdayInCell{
-			ID:          b.ID,
-			Name:        b.Name,
-			Gender:      b.Gender,
-			Color:       models.GenderColor(b.Gender),
-			Day:         b.BirthDay,
-			Age:         b.Age(now),
-			UpcomingAge: b.UpcomingAge(now),
-			Tags:        tags,
+			ID:            b.ID,
+			Name:          b.Name,
+			Gender:        b.Gender,
+			Color:         models.GenderColor(b.Gender),
+			Day:           b.BirthDay,
+			Age:           b.Age(now),
+			UpcomingAge:   b.UpcomingAge(now),
+			Tags:          tags,
+			Shared:        shared,
+			CanEdit:       !shared || canEditBirthday(s.db, uid, b),
+			OwnerUsername: ownerNames[b.UserID],
 		})
 	}
 
@@ -122,8 +141,7 @@ func (s *Server) monthView(w http.ResponseWriter, r *http.Request, uid uint, yea
 }
 
 func (s *Server) yearView(w http.ResponseWriter, r *http.Request, uid uint, year int) {
-	var bds []models.Birthday
-	s.db.Where("user_id = ?", uid).Find(&bds)
+	bds, _ := visibleBirthdays(s.db, uid)
 	months := make([]yearMonthData, 12)
 	for i := range months {
 		months[i] = yearMonthData{Month: i + 1, Genders: map[string]int{
@@ -143,17 +161,20 @@ func (s *Server) yearView(w http.ResponseWriter, r *http.Request, uid uint, year
 
 // upcomingBirthday 即将到来的生日
 type upcomingBirthday struct {
-	ID          uint         `json:"id"`
-	Name        string       `json:"name"`
-	Gender      string       `json:"gender"`
-	Color       string       `json:"color"`
-	BirthYear   int          `json:"birth_year"`
-	BirthMonth  int          `json:"birth_month"`
-	BirthDay    int          `json:"birth_day"`
-	DaysUntil   int          `json:"days_until"`
-	UpcomingAge int          `json:"upcoming_age"`
-	Date        string       `json:"date"`
-	Tags        []models.Tag `json:"tags"`
+	ID            uint         `json:"id"`
+	Name          string       `json:"name"`
+	Gender        string       `json:"gender"`
+	Color         string       `json:"color"`
+	BirthYear     int          `json:"birth_year"`
+	BirthMonth    int          `json:"birth_month"`
+	BirthDay      int          `json:"birth_day"`
+	DaysUntil     int          `json:"days_until"`
+	UpcomingAge   int          `json:"upcoming_age"`
+	Date          string       `json:"date"`
+	Tags          []models.Tag `json:"tags"`
+	Shared        bool         `json:"shared"`
+	CanEdit       bool         `json:"can_edit"`
+	OwnerUsername string       `json:"owner_username,omitempty"`
 }
 
 func (s *Server) handleUpcoming(w http.ResponseWriter, r *http.Request) {
@@ -167,8 +188,9 @@ func (s *Server) handleUpcoming(w http.ResponseWriter, r *http.Request) {
 		rangeDays = 30
 	}
 	var bds []models.Birthday
-	s.db.Where("user_id = ?", u.ID).Find(&bds)
+	bds, _ = visibleBirthdays(s.db, u.ID)
 	tagsByBid := s.birthdaysTagsMap(u.ID, bds)
+	ownerNames := s.birthdayOwnerNames(bds)
 	now := time.Now()
 
 	out := make([]upcomingBirthday, 0)
@@ -186,18 +208,22 @@ func (s *Server) handleUpcoming(w http.ResponseWriter, r *http.Request) {
 		if tags == nil {
 			tags = []models.Tag{}
 		}
+		shared := b.UserID != u.ID
 		out = append(out, upcomingBirthday{
-			ID:          b.ID,
-			Name:        b.Name,
-			Gender:      b.Gender,
-			Color:       models.GenderColor(b.Gender),
-			BirthYear:   b.BirthYear,
-			BirthMonth:  b.BirthMonth,
-			BirthDay:    b.BirthDay,
-			DaysUntil:   days,
-			UpcomingAge: b.UpcomingAge(now),
-			Date:        next.Format("2006-01-02"),
-			Tags:        tags,
+			ID:            b.ID,
+			Name:          b.Name,
+			Gender:        b.Gender,
+			Color:         models.GenderColor(b.Gender),
+			BirthYear:     b.BirthYear,
+			BirthMonth:    b.BirthMonth,
+			BirthDay:      b.BirthDay,
+			DaysUntil:     days,
+			UpcomingAge:   b.UpcomingAge(now),
+			Date:          next.Format("2006-01-02"),
+			Tags:          tags,
+			Shared:        shared,
+			CanEdit:       !shared || canEditBirthday(s.db, u.ID, b),
+			OwnerUsername: ownerNames[b.UserID],
 		})
 	}
 	OK(w, out)

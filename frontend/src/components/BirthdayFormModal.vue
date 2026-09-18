@@ -38,6 +38,15 @@ const tags = ref<Tag[]>([])
 const saving = ref(false)
 const showTagModal = ref(false)
 
+// 共享生日的 owner 标签不在 listTags（仅本人）中，合并进来以便委托编辑时可见/可保留
+const allTags = computed(() => {
+  const map = new Map<number, Tag>()
+  for (const tg of tags.value) map.set(tg.id, tg)
+  for (const tg of props.birthday?.tags ?? []) map.set(tg.id, tg)
+  return [...map.values()]
+})
+const isSharedEdit = computed(() => !!props.birthday?.shared)
+
 const MONTHS = Array.from({ length: 12 }, (_, i) => i + 1)
 
 // 年份选项：1900 .. 当前年+1（不再有"未知"选项；旧数据 birth_year=0 会在编辑时回填为当前年）
@@ -206,10 +215,11 @@ const genderOptions = computed(() => [
       <div class="col mt-16">
         <label>{{ t('birthday.tags') }}</label>
         <span class="hint">{{ t('birthday.multiTagHint') }}</span>
-        <div v-if="tags.length === 0" class="tag-empty">{{ t('tag.untagged') }}</div>
+        <span v-if="isSharedEdit" class="hint shared-hint">👥 {{ t('grant.sharedEditHint', { name: props.birthday?.owner_username ?? '' }) }}</span>
+        <div v-if="allTags.length === 0" class="tag-empty">{{ t('tag.untagged') }}</div>
         <div v-else class="tag-check-grid">
           <label
-            v-for="tg in tags"
+            v-for="tg in allTags"
             :key="tg.id"
             class="tag-check"
             :class="{ checked: tagIds.includes(tg.id) }"
@@ -252,6 +262,11 @@ const genderOptions = computed(() => [
 .hint {
   font-size: 12px;
   color: var(--color-text-muted);
+}
+.shared-hint {
+  display: block;
+  color: var(--color-primary);
+  margin-top: 2px;
 }
 .gender-row {
   display: flex;

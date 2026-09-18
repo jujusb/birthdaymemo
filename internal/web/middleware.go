@@ -86,6 +86,20 @@ func RequireAdmin(lang string) func(http.Handler) http.Handler {
 	}
 }
 
+// BlockGuestWrites 阻止 guest 角色的一切写操作（POST/PUT/DELETE/PATCH）
+// 挂载在认证写接口组上；读接口不受影响
+func BlockGuestWrites(lang string) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if u := userFromContext(r); u != nil && u.Role == models.RoleGuest {
+				FailStatus(w, http.StatusForbidden, CodeForbidden, i18n.T(lang, "error.forbidden"))
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
 // RequestLog 记录请求日志
 func RequestLog(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

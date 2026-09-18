@@ -15,14 +15,16 @@ import (
 	"time"
 
 	"github.com/go-pdf/fpdf"
+	"github.com/mcbill1/birthdaymemo/internal/i18n"
 	"github.com/mcbill1/birthdaymemo/internal/models"
 	_ "golang.org/x/image/webp" // 注册 WebP 解码器
 )
 
 // RangeType 导出范围类型
 const (
-	RangeYear  = "year"
-	RangeMonth = "month"
+	RangeYear       = "year"
+	RangeMonth      = "month"
+	RangeSchoolYear = "school_year" // 学年：进行中的学年（9 月起共 12 页；未到 9 月则从去年 9 月起）
 )
 
 // Range 导出日期范围
@@ -31,6 +33,7 @@ type Range struct {
 	Type  string `json:"type"`
 	Month int    `json:"month,omitempty"` // 1-12，仅 type=month 使用
 	Year  int    `json:"-"`               // 仅内部使用，由后端填充
+	Lang  string `json:"lang,omitempty"`  // 前端 UI 语言（星期表头/脚注/默认标题本地化），空则回退 en
 }
 
 // BirthdayEntry PDF 导出用生日条目
@@ -94,6 +97,9 @@ func (g *Generator) Generate(r Range, entries []BirthdayEntry, ps models.PdfSett
 		r.Year = now.Year()
 	}
 
+	// 本地化语言：未知/空一律回退 en（i18n.T 自带回退）
+	lang := normalizeLang(r.Lang)
+
 	// 横版 A4
 	pdf := fpdf.New("L", "mm", "A4", "")
 	pdf.SetMargins(10, 10, 10)
@@ -120,10 +126,26 @@ func (g *Generator) Generate(r Range, entries []BirthdayEntry, ps models.PdfSett
 	}
 
 	if r.Type == RangeMonth {
-		g.drawMonth(pdf, r.Year, r.Month, entries, ps, now, res, titleFam, tblFam)
+		g.drawMonth(pdf, r.Year, r.Month, entries, ps, now, res, titleFam, tblFam, lang)
+	} else if r.Type == RangeSchoolYear {
+		// 学年：始终导出进行中的学年（9 月起共 12 页）。
+		// 当前月份 >= 9 月：当年 9 月至次年 8 月；否则：去年 9 月至当年 8 月。
+		startYear := r.Year
+		if now.Month() < time.September {
+			startYear--
+		}
+		for i := 0; i < 12; i++ {
+			m := 9 + i
+			y := startYear
+			if m > 12 {
+				m -= 12
+				y++
+			}
+			g.drawMonth(pdf, y, m, entries, ps, now, res, titleFam, tblFam, lang)
+		}
 	} else {
 		for m := 1; m <= 12; m++ {
-			g.drawMonth(pdf, r.Year, m, entries, ps, now, res, titleFam, tblFam)
+			g.drawMonth(pdf, r.Year, m, entries, ps, now, res, titleFam, tblFam, lang)
 		}
 	}
 	var buf bytes.Buffer
@@ -133,8 +155,18 @@ func (g *Generator) Generate(r Range, entries []BirthdayEntry, ps models.PdfSett
 	return buf.Bytes(), nil
 }
 
+// normalizeLang 规范化语言代码：去空格转小写，空则回退 en
+// （未知语言由 i18n.T 自动回退 en）
+func normalizeLang(lang string) string {
+	lang = strings.ToLower(strings.TrimSpace(lang))
+	if lang == "" {
+		return "en"
+	}
+	return lang
+}
+
 // drawMonth 绘制单月日历页（横版 A4，新版日历网格布局）
-func (g *Generator) drawMonth(pdf *fpdf.Fpdf, year, month int, entries []BirthdayEntry, ps models.PdfSetting, now time.Time, res Resources, titleFam, tblFam string) {
+func (g *Generator) drawMonth(pdf *fpdf.Fpdf, year, month int, entries []BirthdayEntry, ps models.PdfSetting, now time.Time, res Resources, titleFam, tblFam, lang string) {
 	pdf.AddPage()
 	w, h := pdf.GetPageSize() // 297 x 210
 
@@ -154,7 +186,7 @@ func (g *Generator) drawMonth(pdf *fpdf.Fpdf, year, month int, entries []Birthda
 	sortByDay(monthBd)
 
 	// 2. 大行：月份文字（居中）
-	titleText := applyTitleVars(ps.TitleText, month, len(monthBd))
+	titleText := applyTitleVars(ps.TitleText, month, year, len(monthBd), lang)
 	pdf.SetFont(titleFam, "B", 24)
 	pdf.SetTextColor(parseRGB(ps.TextColor))
 	pdf.SetXY(margin, margin)
@@ -236,13 +268,16 @@ func (g *Generator) drawMonth(pdf *fpdf.Fpdf, year, month int, entries []Birthda
 		pdf.SetAlpha(1.0, "Normal")
 	}
 
-	// 4.2 表头
-	weekdays := []string{"日", "一", "二", "三", "四", "五", "六"}
+	// 4.2 表头（星期：按导出语言本地化，而非硬编码中文）
+	weekdayKeys := []string{
+		"calendar.sun", "calendar.mon", "calendar.tue", "calendar.wed",
+		"calendar.thu", "calendar.fri", "calendar.sat",
+	}
 	pdf.SetFont(tblFam, "B", 12)
 	pdf.SetTextColor(parseRGB(ps.TextColor))
-	for i, wd := range weekdays {
+	for i, key := range weekdayKeys {
 		pdf.SetXY(margin+float64(i)*colW, calendarTopY)
-		pdf.CellFormat(colW, headerH, wd, "", 0, "C", false, 0, "")
+		pdf.CellFormat(colW, headerH, i18n.T(lang, key), "", 0, "C", false, 0, "")
 	}
 
 	// 4.3 计算月份信息
@@ -319,13 +354,13 @@ func (g *Generator) drawMonth(pdf *fpdf.Fpdf, year, month int, entries []Birthda
 				pdf.SetFont(tblFam, "", 10)
 				nameY := cellYPad + 9
 				for i := 0; i < 2 && i < len(items); i++ {
-					drawNameWithGenderDot(pdf, items[i], cellXPad+1, nameY, cellW-2)
+					drawNameWithGenderDot(pdf, items[i], cellXPad+1, nameY, cellW-2, ageSuffix(items[i], year, ps.ShowAge))
 					nameY += 5
 				}
 
 				var names []string
 				for _, it := range items {
-					names = append(names, it.Name)
+					names = append(names, it.Name+ageSuffix(it, year, ps.ShowAge))
 				}
 				footnotes = append(footnotes, footnote{Index: footnoteCounter, Day: dayNum, Names: names})
 			} else if len(items) > 0 {
@@ -333,7 +368,7 @@ func (g *Generator) drawMonth(pdf *fpdf.Fpdf, year, month int, entries []Birthda
 				pdf.SetFont(tblFam, "", 10)
 				nameY := cellYPad + 9
 				for _, it := range items {
-					drawNameWithGenderDot(pdf, it, cellXPad+1, nameY, cellW-2)
+					drawNameWithGenderDot(pdf, it, cellXPad+1, nameY, cellW-2, ageSuffix(it, year, ps.ShowAge))
 					nameY += 5
 				}
 			}
@@ -341,13 +376,17 @@ func (g *Generator) drawMonth(pdf *fpdf.Fpdf, year, month int, entries []Birthda
 		y += rowH
 	}
 
-	// 5. 脚注
+	// 5. 脚注（按导出语言本地化）
 	if len(footnotes) > 0 {
 		pdf.SetFont(tblFam, "", 9)
 		pdf.SetTextColor(parseRGB(ps.TextColor))
 		footY := h - margin - footnoteH + 2
 		for _, fn := range footnotes {
-			txt := fmt.Sprintf("[%d]: %d日生日: %s", fn.Index, fn.Day, strings.Join(fn.Names, ", "))
+			txt := strings.NewReplacer(
+				"{index}", strconv.Itoa(fn.Index),
+				"{day}", strconv.Itoa(fn.Day),
+				"{names}", strings.Join(fn.Names, ", "),
+			).Replace(i18n.T(lang, "export.footnote"))
 			pdf.SetXY(margin, footY)
 			pdf.MultiCell(innerW, 4, txt, "", "L", false)
 			footY += 4
@@ -384,10 +423,25 @@ func drawSubtitleText(pdf *fpdf.Fpdf, ps models.PdfSetting, tblFam string, margi
 	pdf.CellFormat(innerW, 6, subtitleText, "", 0, "C", false, 0, "")
 }
 
+// ageSuffix 返回姓名后的年龄/年份后缀（如 " (35 · 1990)"）：
+// 仅当开启 ShowAge 且出生年份已知时返回，否则返回空串。
+// 年龄指该年份生日时满的岁数（pageYear - birthYear）。
+func ageSuffix(entry BirthdayEntry, pageYear int, showAge bool) string {
+	if !showAge || entry.BirthYear <= 0 {
+		return ""
+	}
+	age := pageYear - entry.BirthYear
+	if age < 0 {
+		return ""
+	}
+	return " (" + strconv.Itoa(age) + " · " + strconv.Itoa(entry.BirthYear) + ")"
+}
+
 // drawNameWithGenderDot 在单元格内左对齐绘制"性别色圆点 + 姓名"
 // x,y 为名字区域的左上角；w 为可用宽度；先画一个小圆点，再画名字（左对齐）
+// suffix 为姓名后缀（如年龄），随名字一起截断以适应剩余宽度
 // 名字会被自动截断以适应剩余宽度
-func drawNameWithGenderDot(pdf *fpdf.Fpdf, entry BirthdayEntry, x, y, w float64) {
+func drawNameWithGenderDot(pdf *fpdf.Fpdf, entry BirthdayEntry, x, y, w float64, suffix string) {
 	// 1. 性别色圆点（半径 0.8mm，垂直居中于文字行）
 	dotR := 0.8
 	dotCx := x + dotR + 0.3
@@ -404,19 +458,27 @@ func drawNameWithGenderDot(pdf *fpdf.Fpdf, entry BirthdayEntry, x, y, w float64)
 		availW = 1
 	}
 	pdf.SetXY(textX, y)
-	pdf.CellFormat(availW, 5, truncateName(entry.Name, availW), "", 0, "L", false, 0, "")
+	pdf.CellFormat(availW, 5, truncateName(entry.Name+suffix, availW), "", 0, "L", false, 0, "")
 }
 
-// applyTitleVars 替换标题中的 {month} 和 {count} 变量
-func applyTitleVars(text string, month, count int) string {
-	if text == "" {
-		text = models.DefaultPdfTitleText
+// applyTitleVars 替换标题中的变量（与前端 ExportView 的 applyTitleVars 对齐）：
+// {month} / {monthShort}=英文月份缩写, {monthNum}=月份数字, {count}=当月人数, {year}=年份
+func applyTitleVars(text string, month, year, count int, lang string) string {
+	if text == "" || text == models.DefaultPdfTitleText {
+		// 空或沿用旧版中文默认值时，按导出语言取本地化默认标题
+		text = i18n.T(lang, "export.defaultTitle")
 	}
 	monthName := ""
 	if month >= 1 && month <= 12 {
 		monthName = monthShortNames[month-1]
 	}
-	r := strings.NewReplacer("{month}", monthName, "{count}", strconv.Itoa(count))
+	r := strings.NewReplacer(
+		"{month}", monthName,
+		"{monthShort}", monthName,
+		"{monthNum}", strconv.Itoa(month),
+		"{count}", strconv.Itoa(count),
+		"{year}", strconv.Itoa(year),
+	)
 	return sanitizePDFText(r.Replace(text))
 }
 

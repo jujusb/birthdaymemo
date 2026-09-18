@@ -3,9 +3,11 @@ package web
 import (
 	"encoding/json"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/mcbill1/birthdaymemo/internal/config"
 	"github.com/mcbill1/birthdaymemo/internal/i18n"
 	"github.com/mcbill1/birthdaymemo/internal/models"
 )
@@ -14,6 +16,26 @@ import (
 type tagRequest struct {
 	Name  string `json:"name"`
 	Color string `json:"color"`
+}
+
+// tagNameLimit 取生效的标签名称最大字符数（老配置文件缺字段时回退默认值）
+func tagNameLimit(cfg *config.Config) int {
+	if cfg == nil || cfg.TagNameMaxLength < 1 {
+		return config.DefaultTagNameMaxLength
+	}
+	if cfg.TagNameMaxLength > config.MaxTagNameMaxLength {
+		return config.MaxTagNameMaxLength
+	}
+	return cfg.TagNameMaxLength
+}
+
+// validateTagName 校验标签名称长度，失败返回本地化错误信息（空串=通过）
+func validateTagName(cfg *config.Config, name string, lang string) string {
+	max := tagNameLimit(cfg)
+	if len([]rune(name)) < 1 || len([]rune(name)) > max {
+		return strings.ReplaceAll(i18n.T(lang, "tag.nameLimit"), "{max}", strconv.Itoa(max))
+	}
+	return ""
 }
 
 func (s *Server) listTags(w http.ResponseWriter, r *http.Request) {
@@ -31,8 +53,8 @@ func (s *Server) createTag(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	name := strings.TrimSpace(req.Name)
-	if len([]rune(name)) < 1 || len([]rune(name)) > 10 {
-		Fail(w, CodeBadRequest, i18n.T(s.cfg.Language, "tag.nameLimit"))
+	if errMsg := validateTagName(s.cfg, name, s.cfg.Language); errMsg != "" {
+		Fail(w, CodeBadRequest, errMsg)
 		return
 	}
 	color := strings.TrimSpace(req.Color)
@@ -61,8 +83,8 @@ func (s *Server) updateTag(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	name := strings.TrimSpace(req.Name)
-	if len([]rune(name)) < 1 || len([]rune(name)) > 10 {
-		Fail(w, CodeBadRequest, i18n.T(s.cfg.Language, "tag.nameLimit"))
+	if errMsg := validateTagName(s.cfg, name, s.cfg.Language); errMsg != "" {
+		Fail(w, CodeBadRequest, errMsg)
 		return
 	}
 	tag.Name = name
@@ -83,6 +105,8 @@ func (s *Server) deleteTag(w http.ResponseWriter, r *http.Request) {
 	}
 	// 级联删除 BirthdayTag 关联（多对多）
 	s.db.Where("tag_id = ?", tag.ID).Delete(&models.BirthdayTag{})
+	// 级联删除该标签的委托授权
+	s.db.Where("tag_id = ?", tag.ID).Delete(&models.TagGrant{})
 	s.db.Delete(&tag)
 	OK(w, nil)
 }

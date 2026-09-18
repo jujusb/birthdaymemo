@@ -46,7 +46,14 @@ async function request<T>(
     }
     return resp as unknown as T
   }
-  const json: ApiResponse<T> = await resp.json()
+  // Guest-only 服务对不存在的接口返回纯文本 404（非 JSON），此处兜底避免 SyntaxError
+  let json: ApiResponse<T>
+  try {
+    json = (await resp.json()) as ApiResponse<T>
+  } catch {
+    if (resp.status === 401 && onUnauthorized) onUnauthorized()
+    throw new ApiError(resp.status, 0, `request failed: ${resp.status}`)
+  }
   if (resp.status === 401) {
     if (onUnauthorized) onUnauthorized()
     throw new ApiError(401, json.code, json.message, json.data)

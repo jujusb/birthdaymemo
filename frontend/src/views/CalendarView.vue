@@ -4,13 +4,25 @@ import * as api from '@/api'
 import type { CalendarMonthData, CalendarYearData, CalendarDayBirthday } from '@/api/types'
 import { ApiError } from '@/api/client'
 import { useI18nStore } from '@/stores/i18n'
+import { useAuthStore } from '@/stores/auth'
 import { useToast } from '@/composables/useToast'
 import BirthdayFormModal from '@/components/BirthdayFormModal.vue'
 import BirthdayListSidebar from '@/components/BirthdayListSidebar.vue'
 
+// readonly: 分享预览 / Guest Mode 沙盒展示（隐藏一切写入口）
+const props = defineProps<{ readonly?: boolean }>()
+
 const i18n = useI18nStore()
 const t = i18n.t
 const toast = useToast()
+const auth = useAuthStore()
+
+// Guest Mode Toggle（in-app 预览开关）：打开后本页按只读渲染，用于投屏/分享前检查
+const guestPreview = ref(false)
+const effectiveReadonly = computed(() => !!props.readonly || guestPreview.value || auth.isReadOnly)
+
+// 年龄显示开关：同时控制日历格与左侧列表（默认显示）
+const showAge = ref(true)
 
 const today = new Date()
 const view = ref<'month' | 'year'>('month')
@@ -190,25 +202,28 @@ function onBirthdaySaved() {
 
 <template>
   <div class="calendar-wrap">
-    <BirthdayListSidebar />
+    <BirthdayListSidebar :readonly="effectiveReadonly" :show-age="showAge" />
     <div class="calendar-view">
+      <div v-if="guestPreview" class="guest-banner">👁️ {{ t('share.previewOn') }}</div>
       <div class="cal-header row between">
         <div class="row gap-8">
-          <button class="icon" @click="prev" :title="t('calendar.prev')">‹</button>
+          <button class="icon no-print" @click="prev" :title="t('calendar.prev')">‹</button>
           <button class="month-title" @click="toggleView">
             <template v-if="view === 'month'">{{ currentMonthName }} {{ year }}</template>
             <template v-else>{{ year }}</template>
           </button>
-          <button class="icon" @click="next" :title="t('calendar.next')">›</button>
+          <button class="icon no-print" @click="next" :title="t('calendar.next')">›</button>
         </div>
 
         <div class="row gap-8">
-          <button @click="goToday">{{ t('calendar.today') }}</button>
-          <div class="view-toggle">
+          <button class="no-print" @click="goToday">{{ t('calendar.today') }}</button>
+          <div class="view-toggle no-print">
             <button :class="{ active: view === 'month' }" @click="view = 'month'">{{ t('calendar.monthView') }}</button>
             <button :class="{ active: view === 'year' }" @click="view = 'year'">{{ t('calendar.yearView') }}</button>
           </div>
-          <button class="primary" @click="showBirthdayModal = true">+ {{ t('birthday.new') }}</button>
+          <button class="primary no-print" v-if="!effectiveReadonly" @click="showBirthdayModal = true">+ {{ t('birthday.new') }}</button>
+          <button class="no-print" :class="{ active: guestPreview }" @click="guestPreview = !guestPreview" :title="t('share.previewHint')">👁️ {{ t('share.preview') }}</button>
+          <button class="no-print" :class="{ active: showAge }" @click="showAge = !showAge" :title="t('share.showAgeHint')">🎂 {{ t('share.showAge') }}</button>
         </div>
       </div>
 
@@ -231,10 +246,11 @@ function onBirthdaySaved() {
                 v-for="b in cell.birthdays.slice(0, 2)"
                 :key="b.id"
                 class="bd-item"
-                :title="t('calendar.birthdayOn')"
+                :title="showAge && b.upcoming_age > 0 ? t('common.turnsAge', { age: b.upcoming_age }) : t('calendar.birthdayOn')"
               >
                 <span class="tag-dot" :style="{ background: genderColor(b.gender) }"></span>
                 <span class="bd-name">{{ b.name }}</span>
+                <span v-if="showAge && b.upcoming_age > 0" class="age-badge">{{ b.upcoming_age }}</span>
               </div>
               <a
                 v-if="cell.birthdays.length > 2"
@@ -263,6 +279,11 @@ function onBirthdaySaved() {
             <div v-for="b in popupDay.birthdays" :key="b.id" class="popup-item">
               <span class="tag-dot" :style="{ background: genderColor(b.gender) }"></span>
               <span class="popup-name">{{ b.name }}</span>
+              <span
+                v-if="showAge && b.upcoming_age > 0"
+                class="age-badge"
+                :title="t('common.turnsAge', { age: b.upcoming_age })"
+              >{{ t('common.turnsAge', { age: b.upcoming_age }) }}</span>
             </div>
           </div>
         </div>
@@ -291,7 +312,7 @@ function onBirthdaySaved() {
         </div>
       </div>
 
-      <BirthdayFormModal v-if="showBirthdayModal" @close="showBirthdayModal = false" @saved="onBirthdaySaved" />
+      <BirthdayFormModal v-if="showBirthdayModal && !effectiveReadonly" @close="showBirthdayModal = false" @saved="onBirthdaySaved" />
     </div>
   </div>
 </template>
@@ -312,6 +333,14 @@ function onBirthdaySaved() {
 .cal-header {
   flex-wrap: wrap;
   gap: 8px;
+}
+.guest-banner {
+  background: var(--color-bg-sunken);
+  border: 1px dashed var(--color-primary);
+  border-radius: var(--radius-sm);
+  padding: 6px 12px;
+  font-size: 13px;
+  color: var(--color-text-muted);
 }
 .icon {
   font-size: 18px;
@@ -478,6 +507,25 @@ function onBirthdaySaved() {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.age-badge {
+  display: inline-block;
+  min-width: 18px;
+  text-align: center;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1.4;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: var(--color-bg-sunken);
+  border: 1px solid var(--color-border);
+  color: var(--color-text-muted);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.popup-item .age-badge {
+  margin-left: auto;
+  font-size: 11px;
+}
 .more-link {
   font-size: 11px;
   color: var(--color-primary);
@@ -627,6 +675,27 @@ function onBirthdaySaved() {
 @media (max-width: 768px) {
   .calendar-wrap {
     flex-direction: column;
+  }
+}
+@media print {
+  .no-print,
+  .guest-banner,
+  .popup-overlay {
+    display: none !important;
+  }
+  .calendar-view {
+    width: 100%;
+  }
+  .day-cell,
+  .year-cell {
+    break-inside: avoid;
+  }
+  .tag-dot,
+  .age-badge,
+  .ym-count,
+  .view-toggle button.active {
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
   }
 }
 </style>

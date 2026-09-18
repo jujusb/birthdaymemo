@@ -19,7 +19,7 @@ const loading = ref(false)
 const showCreate = ref(false)
 const showReset = ref(false)
 const resetTarget = ref<User | null>(null)
-const createForm = ref({ username: '', password: '' })
+const createForm = ref({ username: '', password: '', role: 'user' as 'user' | 'guest' | 'admin' })
 const resetForm = ref({ password: '' })
 const saving = ref(false)
 
@@ -36,7 +36,7 @@ async function load() {
 onMounted(load)
 
 function openCreate() {
-  createForm.value = { username: '', password: '' }
+  createForm.value = { username: '', password: '', role: 'user' }
   showCreate.value = true
 }
 function openReset(u: User) {
@@ -52,7 +52,7 @@ async function doCreate() {
   }
   saving.value = true
   try {
-    await api.createUser(createForm.value.username, createForm.value.password)
+    await api.createUser(createForm.value.username, createForm.value.password, createForm.value.role)
     toast.success(t('common.success'))
     showCreate.value = false
     load()
@@ -162,6 +162,15 @@ function formatTime(s: string): string {
         <div class="col mt-16">
           <label>{{ t('admin.initialPassword') }}</label>
           <input v-model="createForm.password" type="password" autocomplete="new-password" />
+        </div>
+        <div class="col mt-16">
+          <label>{{ t('role.title') }}</label>
+          <select v-model="createForm.role">
+            <option value="user">{{ t('role.user') }}</option>
+            <option value="guest">{{ t('role.guest') }}</option>
+            <option value="admin">{{ t('role.admin') }}</option>
+          </select>
+          <span class="hint">{{ t('role.guestHint') }}</span>
         </div>
         <div class="row between mt-24 actions">
           <button @click="showCreate = false">{{ t('common.cancel') }}</button>
