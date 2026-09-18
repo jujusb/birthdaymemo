@@ -82,6 +82,7 @@ const settings = ref<PdfSetting>({
   cell_border_opacity: 100,
   text_color: '#333333',
   show_age: false,
+  show_birth_year: false,
 })
 
 const presetFonts = ref<PresetFont[]>([])
@@ -487,13 +488,18 @@ function genderColor(g: string): string {
   return '#9E9E9E'
 }
 
-// 预览用的年龄后缀（如 " (35 · 1990)"），与后端 PDF 的 ageSuffix 对齐：
-// 出生年份 = 页面年份 - 即将到的年龄；年份未知或未开启时返回空串
+// 预览用的年龄/年份后缀，与后端 PDF 的 ageSuffix 对齐：
+// 两项都开为 " (35 · 1990)"，仅年龄 " (35)"，仅年份 " (1990)"，都不开为空串。
+// 出生年份 = 页面年份 - 即将到的年龄；年份未知时返回空串
 function previewAgeSuffix(b: CalendarDayBirthday, pageYear: number): string {
-  if (!settings.value.show_age || b.upcoming_age <= 0) return ''
+  const showAge = settings.value.show_age
+  const showYear = settings.value.show_birth_year
+  if ((!showAge && !showYear) || b.upcoming_age <= 0) return ''
   const birthYear = pageYear - b.upcoming_age
   if (birthYear <= 0) return ''
-  return ` (${b.upcoming_age} · ${birthYear})`
+  if (showAge && showYear) return ` (${b.upcoming_age} · ${birthYear})`
+  if (showAge) return ` (${b.upcoming_age})`
+  return ` (${birthYear})`
 }
 
 // 构建单月预览数据
@@ -581,8 +587,8 @@ watch([rangeType, rangeMonth], () => {
   loadPreviewData()
 })
 
-// 年龄开关影响预计算的脚注名单，切换时重建预览
-watch(() => settings.value.show_age, () => {
+// 年龄/年份开关影响预计算的脚注名单，切换时重建预览
+watch(() => [settings.value.show_age, settings.value.show_birth_year], () => {
   loadPreviewData()
 })
 
@@ -1214,6 +1220,11 @@ function capitalize(s: string): string {
             {{ t('export.showAge') }}
           </label>
           <span class="hint">{{ t('export.showAgeHint') }}</span>
+          <label class="check-opt mt-8">
+            <input v-model="settings.show_birth_year" type="checkbox" />
+            {{ t('export.showBirthYear') }}
+          </label>
+          <span class="hint">{{ t('export.showBirthYearHint') }}</span>
         </div>
 
         <div class="row gap-8 actions">
@@ -1270,7 +1281,7 @@ function capitalize(s: string): string {
                               :style="{ color: textColor }"
                             >
                               <span class="cell-gender-dot" :style="{ background: genderColor(b.gender) }"></span>
-                              <span class="cell-name-text">{{ truncateName(b.name, settings.show_age ? 4 : 6) + previewAgeSuffix(b, pm.year) }}</span>
+                              <span class="cell-name-text">{{ truncateName(b.name, (settings.show_age || settings.show_birth_year) ? 4 : 6) + previewAgeSuffix(b, pm.year) }}</span>
                             </div>
                           </div>
                         </template>

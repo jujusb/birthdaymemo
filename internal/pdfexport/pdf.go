@@ -354,13 +354,13 @@ func (g *Generator) drawMonth(pdf *fpdf.Fpdf, year, month int, entries []Birthda
 				pdf.SetFont(tblFam, "", 10)
 				nameY := cellYPad + 9
 				for i := 0; i < 2 && i < len(items); i++ {
-					drawNameWithGenderDot(pdf, items[i], cellXPad+1, nameY, cellW-2, ageSuffix(items[i], year, ps.ShowAge))
+					drawNameWithGenderDot(pdf, items[i], cellXPad+1, nameY, cellW-2, ageSuffix(items[i], year, ps.ShowAge, ps.ShowBirthYear))
 					nameY += 5
 				}
 
 				var names []string
 				for _, it := range items {
-					names = append(names, it.Name+ageSuffix(it, year, ps.ShowAge))
+					names = append(names, it.Name+ageSuffix(it, year, ps.ShowAge, ps.ShowBirthYear))
 				}
 				footnotes = append(footnotes, footnote{Index: footnoteCounter, Day: dayNum, Names: names})
 			} else if len(items) > 0 {
@@ -368,7 +368,7 @@ func (g *Generator) drawMonth(pdf *fpdf.Fpdf, year, month int, entries []Birthda
 				pdf.SetFont(tblFam, "", 10)
 				nameY := cellYPad + 9
 				for _, it := range items {
-					drawNameWithGenderDot(pdf, it, cellXPad+1, nameY, cellW-2, ageSuffix(it, year, ps.ShowAge))
+					drawNameWithGenderDot(pdf, it, cellXPad+1, nameY, cellW-2, ageSuffix(it, year, ps.ShowAge, ps.ShowBirthYear))
 					nameY += 5
 				}
 			}
@@ -423,18 +423,25 @@ func drawSubtitleText(pdf *fpdf.Fpdf, ps models.PdfSetting, tblFam string, margi
 	pdf.CellFormat(innerW, 6, subtitleText, "", 0, "C", false, 0, "")
 }
 
-// ageSuffix 返回姓名后的年龄/年份后缀（如 " (35 · 1990)"）：
-// 仅当开启 ShowAge 且出生年份已知时返回，否则返回空串。
+// ageSuffix 返回姓名后的年龄/年份后缀：两项都开为 " (35 · 1990)"，
+// 仅年龄为 " (35)"，仅年份为 " (1990)"；都关闭或出生年份未知时返回空串。
 // 年龄指该年份生日时满的岁数（pageYear - birthYear）。
-func ageSuffix(entry BirthdayEntry, pageYear int, showAge bool) string {
-	if !showAge || entry.BirthYear <= 0 {
+func ageSuffix(entry BirthdayEntry, pageYear int, showAge, showBirthYear bool) string {
+	if (!showAge && !showBirthYear) || entry.BirthYear <= 0 {
 		return ""
 	}
 	age := pageYear - entry.BirthYear
 	if age < 0 {
 		return ""
 	}
-	return " (" + strconv.Itoa(age) + " · " + strconv.Itoa(entry.BirthYear) + ")"
+	switch {
+	case showAge && showBirthYear:
+		return " (" + strconv.Itoa(age) + " · " + strconv.Itoa(entry.BirthYear) + ")"
+	case showAge:
+		return " (" + strconv.Itoa(age) + ")"
+	default:
+		return " (" + strconv.Itoa(entry.BirthYear) + ")"
+	}
 }
 
 // drawNameWithGenderDot 在单元格内左对齐绘制"性别色圆点 + 姓名"

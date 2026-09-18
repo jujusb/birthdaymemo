@@ -146,7 +146,8 @@ type PdfSetting struct {
 	// 文字
 	TextColor string    `json:"text_color" gorm:"size:20;default:#333333"`
 	// 日历内容：在姓名旁显示即将到的年龄与出生年份（如 Alice (35 · 1990)）
-	ShowAge   bool      `json:"show_age" gorm:"not null;default:false"`
+	ShowAge       bool      `json:"show_age" gorm:"not null;default:false"`
+	ShowBirthYear bool      `json:"show_birth_year" gorm:"not null;default:false"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 }

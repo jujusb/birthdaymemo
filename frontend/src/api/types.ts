@@ -83,7 +83,8 @@ export interface PdfSetting {
   cell_border_color: string
   cell_border_opacity: number
   text_color: string
-  show_age: boolean // 日历姓名旁显示即将到的年龄与出生年份
+  show_age: boolean // 日历姓名旁显示即将到的年龄
+  show_birth_year: boolean // 日历姓名旁显示出生年份
 }
 
 // PDF 预设字体

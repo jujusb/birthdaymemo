@@ -239,6 +239,7 @@ func (s *Server) updatePdfSettings(w http.ResponseWriter, r *http.Request) {
 	ps.TableBgColor = req.TableBgColor
 	ps.TextColor = req.TextColor
 	ps.ShowAge = req.ShowAge
+	ps.ShowBirthYear = req.ShowBirthYear
 	s.db.Save(&ps)
 	OK(w, ps)
 }

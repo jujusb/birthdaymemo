@@ -68,10 +68,11 @@ All items below were added on top of the last commits. Frontend verified with
   `tag.nameLimit` message (`Max {max} …`), the tag modal (maxlength, counter,
   rune-counted), and the DB column (100) all follow the configured value,
   which the frontend reads from `GET /api/settings` (`tag_name_max_length`).
-- PDF export: new "Show ages in calendar" checkbox (persisted per user in
-  `pdf_settings.show_age`, auto-migrated, default off). When on, cells and
-  footnotes render `Alice (35 · 1990)` — upcoming age plus birth year;
-  unknown years show just the name. Preview matches the PDF.
+- PDF export: "Show ages in calendar" and "Show birth year in calendar" are two
+  independent checkboxes (persisted per user in `pdf_settings.show_age` /
+  `pdf_settings.show_birth_year`, auto-migrated, both default off). Cells and
+  footnotes render `Alice (35)`, `Alice (1990)`, or `Alice (35 · 1990)` when
+  both are on; unknown years show just the name. Preview matches the PDF.
 - PDF export: new "School Year (Sep – Aug)" range. It always covers the
   **ongoing** school year (Sep this year → Aug next year, or Sep last
   year → Aug this year before September); the radio label shows the exact
