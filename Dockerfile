@@ -65,11 +65,9 @@ RUN apk add --no-cache ca-certificates tzdata \
  && mkdir -p /data /opt/birthdaymemo \
  && chown app:app /data
 
-# Pristine binary. The entrypoint copies it into /data on every start so
+# Pristine binary. The entrypoint copies it into /opt/birthdaymemo on every start so
 # image updates take effect even though /data is a persistent volume.
 COPY --from=backend /out/birthdaymemo /opt/birthdaymemo/birthdaymemo
-COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
-RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 
 # The app stores config.json, birthdaymemo.db, logs/ and languages/
 # next to the executable, so the executable must run from /data.
@@ -80,4 +78,4 @@ USER app
 # from compose.yaml; keep EXPOSE in sync when changing the default.
 EXPOSE 8080
 
-ENTRYPOINT ["docker-entrypoint.sh"]
+ENTRYPOINT ["/opt/birthdaymemo/birthdaymemo"]

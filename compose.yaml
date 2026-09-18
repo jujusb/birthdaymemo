@@ -27,10 +27,15 @@ services:
     image: birthdaymemo:latest
     container_name: birthdaymemo
     restart: unless-stopped
+    user: "${UUID:-1000}:${GUID:-1000}"
     ports:
       # Container side MUST equal BIRTHDAYMEMO_LISTEN_PORT.
-      - "${HOST_PORT:-8080}:${BIRTHDAYMEMO_LISTEN_PORT:-8080}"
+      - "${BIRTHDAYMEMO_ADMIN_HOST_PORT:-8080}:8080"
     environment:
+      # Set the UID/GID for the container process (default 1000/1000). This is used
+      # to map the container's user and group IDs to the host's user and group IDs.
+      UUID: ${UUID:-1000}
+      GUID: ${GUID:-1000}
       # Reminder emails are scheduled in local time; set your zone, e.g. TZ=Asia/Shanghai.
       TZ: ${TZ:-UTC}
       # Console/default language: en | zh.
@@ -39,11 +44,11 @@ services:
       # published port is reachable; 127.0.0.1 would only listen on loopback.
       BIRTHDAYMEMO_LISTEN_ADDRESS: ${BIRTHDAYMEMO_LISTEN_ADDRESS:-0.0.0.0}
       # Listen port inside the container (must match the container side above).
-      BIRTHDAYMEMO_LISTEN_PORT: ${BIRTHDAYMEMO_LISTEN_PORT:-8080}
+      BIRTHDAYMEMO_LISTEN_PORT: 8080
       # Operation log retention days, 0 = unlimited.
       BIRTHDAYMEMO_RETENTION_DAYS: ${BIRTHDAYMEMO_RETENTION_DAYS:-14}
       # External base URL (with http(s)://) used for links in emails; empty = auto from request.
-      BIRTHDAYMEMO_EXTERNAL_URL: ${BIRTHDAYMEMO_EXTERNAL_URL:-https://birthday.jujusb.com}
+      BIRTHDAYMEMO_EXTERNAL_URL: ${BIRTHDAYMEMO_EXTERNAL_URL:-https://birthday.example.com}
       # Admin account created on first start (username 3-10 chars).
       BIRTHDAYMEMO_ADMIN_USER: ${BIRTHDAYMEMO_ADMIN_USER:-admin}
       # Admin password (min 8 chars, must contain uppercase, lowercase and digits).
@@ -52,7 +57,7 @@ services:
       # Tag name max length in characters (1-100, default 20).
       BIRTHDAYMEMO_TAG_NAME_MAX_LENGTH: ${BIRTHDAYMEMO_TAG_NAME_MAX_LENGTH:-20}
     volumes:
-      - ./data:/data
+      - ${BIRTHDAYMEMO_DATA_DIR:-./data}:/opt/birthdaymemo
 
   # Sharelink-only service (guest mode).
   #
@@ -75,20 +80,16 @@ services:
     image: birthdaymemo:latest
     container_name: birthdaymemo-guest
     restart: unless-stopped
+    user: "${UUID:-1000}:${GUID:-1000}"
     command: ["--guest-only"]
     ports:
       # Container side MUST equal BIRTHDAYMEMO_GUEST_PORT.
-      - "${GUEST_HOST_PORT:-8081}:${BIRTHDAYMEMO_GUEST_PORT:-8081}"
+      - "${BIRTHDAYMEMO_GUEST_HOST_PORT:-8081}:8081"
     environment:
       TZ: ${TZ:-UTC}
+      BIRTHDAYMEMO_GUEST_ONLY: 1
       BIRTHDAYMEMO_LANGUAGE: ${BIRTHDAYMEMO_LANGUAGE:-en}
       # Keep 0.0.0.0 so the published port is reachable.
       BIRTHDAYMEMO_LISTEN_ADDRESS: 0.0.0.0
-      # Guest listen port inside the container (must match the container side above).
-      BIRTHDAYMEMO_LISTEN_PORT: ${BIRTHDAYMEMO_GUEST_PORT:-8081}
-      BIRTHDAYMEMO_GUEST_ONLY: 1
-      # Public base URL (with http(s)://) used when building share-link URLs.
-      # Set this to the PUBLIC hostname, e.g. https://view.example.com.
-      BIRTHDAYMEMO_EXTERNAL_URL: ${BIRTHDAYMEMO_GUEST_EXTERNAL_URL:-}
     volumes:
-      - ./data:/data
+      - ${BIRTHDAYMEMO_DATA_DIR:-./data}:/opt/birthdaymemo
