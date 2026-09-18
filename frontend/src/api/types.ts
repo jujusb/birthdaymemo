@@ -145,6 +145,7 @@ export interface CalendarDayBirthday {
   gender: 'male' | 'female' | 'none'
   color: string
   day: number
+  birth_year: number // 出生年份，0=未知
   age: number
   upcoming_age: number
   tags: Tag[]

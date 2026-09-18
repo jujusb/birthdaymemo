@@ -26,6 +26,24 @@ All items below were added on top of the last commits. Frontend verified with
 - The 🖨️ Print button was removed from the editor header
   (`CalendarView.vue`); Ctrl+P printing still uses the print stylesheet.
 
+## 2b. Birth-year toggle in edit and view modes
+
+- New 📆 Year button next to the 🎂 Age button, in both the editor
+  (`CalendarView`) and the share page (`ShareView`), default on. It shows the
+  birth year as a badge next to each name in the month calendar (and the
+  "N more" popup), the birthday list, and the sidebar list (via a new
+  `show-year` prop, mirroring `show-age`). Unknown years show nothing.
+- Backend calendar responses (`birthdayInCell`, used by the authenticated
+  month view and the public share month view) now include `birth_year`, so
+  the UI uses the exact stored year instead of deriving it.
+- Calendar age badges follow the viewed year: navigating to year+1 shows the
+  age they'll turn that year (`viewedYear - birthYear`); the current-year
+  view keeps the API's `upcoming_age`, with fallback when the birth year is
+  unknown. Same rule in the Export preview for multi-page (year/school)
+  ranges; the downloaded PDF already used each page's own year.
+- New i18n keys: `share.showYear`, `share.showYearHint`, `common.bornIn`
+  (badge tooltip, en + zh).
+
 ## 3. Guest mode reuses the Export PDF window (replaces printing)
 
 - New public, no-login PDF endpoints (read-only / pure generation, mounted in

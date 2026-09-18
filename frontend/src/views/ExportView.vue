@@ -490,15 +490,18 @@ function genderColor(g: string): string {
 
 // 预览用的年龄/年份后缀，与后端 PDF 的 ageSuffix 对齐：
 // 两项都开为 " (35 · 1990)"，仅年龄 " (35)"，仅年份 " (1990)"，都不开为空串。
-// 出生年份 = 页面年份 - 即将到的年龄；年份未知时返回空串
+// 年龄跟随页面年份（跨年/学年预览的次年页显示次年满的岁数）；当年页沿用 API 的
+// upcoming_age，出生年份优先用 API 返回的 birth_year（未知时按当年页推算）
 function previewAgeSuffix(b: CalendarDayBirthday, pageYear: number): string {
   const showAge = settings.value.show_age
   const showYear = settings.value.show_birth_year
   if ((!showAge && !showYear) || b.upcoming_age <= 0) return ''
-  const birthYear = pageYear - b.upcoming_age
+  const birthYear = (b.birth_year || 0) > 0 ? b.birth_year : pageYear - b.upcoming_age
   if (birthYear <= 0) return ''
-  if (showAge && showYear) return ` (${b.upcoming_age} · ${birthYear})`
-  if (showAge) return ` (${b.upcoming_age})`
+  const age = pageYear === currentYear ? b.upcoming_age : pageYear - birthYear
+  if (age < 0) return ''
+  if (showAge && showYear) return ` (${age} · ${birthYear})`
+  if (showAge) return ` (${age})`
   return ` (${birthYear})`
 }
 

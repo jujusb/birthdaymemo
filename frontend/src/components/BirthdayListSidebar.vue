@@ -13,11 +13,12 @@ import BirthdayFormModal from './BirthdayFormModal.vue'
 import { useAuthStore } from '@/stores/auth'
 
 // readonly: 分享预览 / Guest Mode / guest 账号（隐藏一切写入口）
-// showAge: 年龄显示开关（由 CalendarView 的 🎂 按钮控制，默认显示）
-const props = defineProps<{ readonly?: boolean; showAge?: boolean }>()
+// showAge/showYear: 年龄/出生年份显示开关（由 CalendarView 的 🎂/📆 按钮控制，默认显示）
+const props = defineProps<{ readonly?: boolean; showAge?: boolean; showYear?: boolean }>()
 const auth = useAuthStore()
 const effectiveReadonly = computed(() => !!props.readonly || auth.isReadOnly)
 const showAge = computed(() => props.showAge ?? true)
+const showYear = computed(() => props.showYear ?? true)
 
 const i18n = useI18nStore()
 const t = i18n.t
@@ -555,6 +556,11 @@ onBeforeUnmount(() => {
                   class="bd-age"
                   :title="t('common.turnsAge', { age: upcomingAgeOf(b) })"
                 >{{ upcomingAgeOf(b) }}</span>
+                <span
+                  v-if="showYear && (b.birth_year || 0) > 0"
+                  class="bd-age"
+                  :title="t('common.bornIn', { year: b.birth_year })"
+                >{{ b.birth_year }}</span>
               </div>
             </div>
           </div>

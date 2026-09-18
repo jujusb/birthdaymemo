@@ -476,7 +476,7 @@ func (s *Server) handlePublicShareCalendar(w http.ResponseWriter, r *http.Reques
 		}
 		cells = append(cells, birthdayInCell{
 			ID: b.ID, Name: b.Name, Gender: b.Gender, Color: models.GenderColor(b.Gender),
-			Day: b.BirthDay, Age: b.Age(now), UpcomingAge: b.UpcomingAge(now), Tags: tgs,
+			Day: b.BirthDay, BirthYear: b.BirthYear, Age: b.Age(now), UpcomingAge: b.UpcomingAge(now), Tags: tgs,
 		})
 	}
 	first := time.Date(year, time.Month(month), 1, 0, 0, 0, 0, time.Local)

@@ -29,6 +29,7 @@
   "common.refresh": "刷新",
   "common.print": "打印",
   "common.turnsAge": "满 {age} 岁",
+  "common.bornIn": "出生于 {year} 年",
 
   "login.title": "登录",
   "login.username": "用户名",
@@ -294,6 +295,8 @@
   "share.kioskHint": "大字体展示模式，适合公共屏幕",
   "share.showAge": "年龄",
   "share.showAgeHint": "在日历和列表中显示/隐藏年龄",
+  "share.showYear": "年份",
+  "share.showYearHint": "在日历和列表中显示/隐藏出生年份",
   "share.expiredTitle": "该链接无效或已过期",
   "share.expiredDesc": "请联系分享者获取新链接。",
   "share.slug": "自定义短址",

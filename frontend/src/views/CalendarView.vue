@@ -23,6 +23,8 @@ const effectiveReadonly = computed(() => !!props.readonly || guestPreview.value 
 
 // 年龄显示开关：同时控制日历格与左侧列表（默认显示）
 const showAge = ref(true)
+// 出生年份显示开关：同时控制日历格与左侧列表（默认显示）
+const showYear = ref(true)
 
 const today = new Date()
 const view = ref<'month' | 'year'>('month')
@@ -49,6 +51,15 @@ function genderColor(g: string): string {
   if (g === 'male') return 'var(--color-male)'
   if (g === 'female') return 'var(--color-female)'
   return 'var(--color-gender-none)'
+}
+
+// 日历格显示的年龄：跟随当前查看的年份（切到明年就显示明年满的岁数），
+// 仅当年视图沿用后端基于今天算出的 upcoming_age；出生年份未知时回退该值
+const currentYear = today.getFullYear()
+function displayAge(b: CalendarDayBirthday): number {
+  if (year.value === currentYear) return b.upcoming_age
+  if ((b.birth_year || 0) > 0) return year.value - b.birth_year
+  return b.upcoming_age
 }
 
 // 日历独立显示所有生日，不受左侧标签筛选影响
@@ -202,7 +213,7 @@ function onBirthdaySaved() {
 
 <template>
   <div class="calendar-wrap">
-    <BirthdayListSidebar :readonly="effectiveReadonly" :show-age="showAge" />
+    <BirthdayListSidebar :readonly="effectiveReadonly" :show-age="showAge" :show-year="showYear" />
     <div class="calendar-view">
       <div v-if="guestPreview" class="guest-banner">👁️ {{ t('share.previewOn') }}</div>
       <div class="cal-header row between">
@@ -224,6 +235,7 @@ function onBirthdaySaved() {
           <button class="primary no-print" v-if="!effectiveReadonly" @click="showBirthdayModal = true">+ {{ t('birthday.new') }}</button>
           <button class="no-print" :class="{ active: guestPreview }" @click="guestPreview = !guestPreview" :title="t('share.previewHint')">👁️ {{ t('share.preview') }}</button>
           <button class="no-print" :class="{ active: showAge }" @click="showAge = !showAge" :title="t('share.showAgeHint')">🎂 {{ t('share.showAge') }}</button>
+          <button class="no-print" :class="{ active: showYear }" @click="showYear = !showYear" :title="t('share.showYearHint')">📆 {{ t('share.showYear') }}</button>
         </div>
       </div>
 
@@ -246,11 +258,12 @@ function onBirthdaySaved() {
                 v-for="b in cell.birthdays.slice(0, 2)"
                 :key="b.id"
                 class="bd-item"
-                :title="showAge && b.upcoming_age > 0 ? t('common.turnsAge', { age: b.upcoming_age }) : t('calendar.birthdayOn')"
+                :title="showAge && displayAge(b) > 0 ? t('common.turnsAge', { age: displayAge(b) }) : t('calendar.birthdayOn')"
               >
                 <span class="tag-dot" :style="{ background: genderColor(b.gender) }"></span>
                 <span class="bd-name">{{ b.name }}</span>
-                <span v-if="showAge && b.upcoming_age > 0" class="age-badge">{{ b.upcoming_age }}</span>
+                <span v-if="showAge && displayAge(b) > 0" class="age-badge" :title="t('common.turnsAge', { age: displayAge(b) })">{{ displayAge(b) }}</span>
+                <span v-if="showYear && (b.birth_year || 0) > 0" class="age-badge" :title="t('common.bornIn', { year: b.birth_year })">{{ b.birth_year }}</span>
               </div>
               <a
                 v-if="cell.birthdays.length > 2"
@@ -280,10 +293,15 @@ function onBirthdaySaved() {
               <span class="tag-dot" :style="{ background: genderColor(b.gender) }"></span>
               <span class="popup-name">{{ b.name }}</span>
               <span
-                v-if="showAge && b.upcoming_age > 0"
+                v-if="showAge && displayAge(b) > 0"
                 class="age-badge"
-                :title="t('common.turnsAge', { age: b.upcoming_age })"
-              >{{ t('common.turnsAge', { age: b.upcoming_age }) }}</span>
+                :title="t('common.turnsAge', { age: displayAge(b) })"
+              >{{ t('common.turnsAge', { age: displayAge(b) }) }}</span>
+              <span
+                v-if="showYear && (b.birth_year || 0) > 0"
+                class="age-badge"
+                :title="t('common.bornIn', { year: b.birth_year })"
+              >{{ b.birth_year }}</span>
             </div>
           </div>
         </div>

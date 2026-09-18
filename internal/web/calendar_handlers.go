@@ -21,6 +21,7 @@ type birthdayInCell struct {
 	Gender        string       `json:"gender"`
 	Color         string       `json:"color"`
 	Day           int          `json:"day"`          // 生日日期（几号）
+	BirthYear     int          `json:"birth_year"`   // 出生年份，0=未知
 	Age           int          `json:"age"`          // 当前年龄，-1=未知
 	UpcomingAge   int          `json:"upcoming_age"` // 即将到来的生日后的年龄
 	Tags          []models.Tag `json:"tags"`
@@ -106,6 +107,7 @@ func (s *Server) monthView(w http.ResponseWriter, r *http.Request, uid uint, yea
 			Gender:        b.Gender,
 			Color:         models.GenderColor(b.Gender),
 			Day:           b.BirthDay,
+			BirthYear:     b.BirthYear,
 			Age:           b.Age(now),
 			UpcomingAge:   b.UpcomingAge(now),
 			Tags:          tags,

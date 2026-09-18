@@ -29,6 +29,7 @@
   "common.refresh": "Refresh",
   "common.print": "Print",
   "common.turnsAge": "turns {age}",
+  "common.bornIn": "Born in {year}",
 
   "login.title": "Login",
   "login.username": "Username",
@@ -294,6 +295,8 @@
   "share.kioskHint": "Large-text display mode for public screens",
   "share.showAge": "Age",
   "share.showAgeHint": "Show / hide ages in calendar and list",
+  "share.showYear": "Year",
+  "share.showYearHint": "Show / hide birth years in calendar and list",
   "share.expiredTitle": "This link is invalid or expired",
   "share.expiredDesc": "Ask the owner for a new link.",
   "share.slug": "Custom slug",

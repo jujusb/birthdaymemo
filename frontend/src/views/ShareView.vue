@@ -24,6 +24,8 @@ const month = ref(today.getMonth() + 1)
 const kiosk = ref(false)
 // Show upcoming ages in calendar and list (toggleable)
 const showAge = ref(true)
+// Show birth years in calendar and list (toggleable)
+const showYear = ref(true)
 const selectedTagIds = ref<number[]>([])
 
 const monthKeyList = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec']
@@ -64,6 +66,15 @@ function upcomingAgeOf(b: PublicBirthday): number {
 
 interface ShareDayItem extends PublicBirthday {
   upcomingAge: number
+}
+
+// 日历格显示的年龄：跟随当前查看的年份（切到明年就显示明年满的岁数），
+// 仅当年视图沿用基于今天算出的 upcomingAge；出生年份未知时回退该值
+const currentYear = today.getFullYear()
+function displayAge(b: ShareDayItem): number {
+  if (year.value === currentYear) return b.upcomingAge
+  if ((b.birth_year || 0) > 0) return year.value - b.birth_year
+  return b.upcomingAge
 }
 
 async function loadShare() {
@@ -152,6 +163,7 @@ const birthdaysByDay = computed<Record<number, ShareDayItem[]>>(() => {
         <button @click="view = 'year'" :class="{ active: view === 'year' }">{{ t('calendar.yearView') }}</button>
         <button @click="kiosk = !kiosk" :title="t('share.kioskHint')">🖥️ {{ t('share.kiosk') }}</button>
         <button @click="showAge = !showAge" :class="{ active: showAge }" :title="t('share.showAgeHint')">🎂 {{ t('share.showAge') }}</button>
+        <button @click="showYear = !showYear" :class="{ active: showYear }" :title="t('share.showYearHint')">📆 {{ t('share.showYear') }}</button>
         <button @click="goExport" :title="t('export.title')">📄 {{ t('export.title') }}</button>
       </div>
     </header>
@@ -191,10 +203,15 @@ const birthdaysByDay = computed<Record<number, ShareDayItem[]>>(() => {
           <div v-for="b in birthdaysByDay[d] || []" :key="b.id" class="bd-item">
             <span class="tag-dot" :style="{ background: b.color }"></span>{{ b.name }}
             <span
-              v-if="showAge && b.upcomingAge > 0"
+              v-if="showAge && displayAge(b) > 0"
               class="age-badge"
-              :title="t('common.turnsAge', { age: b.upcomingAge })"
-            >{{ b.upcomingAge }}</span>
+              :title="t('common.turnsAge', { age: displayAge(b) })"
+            >{{ displayAge(b) }}</span>
+            <span
+              v-if="showYear && (b.birth_year || 0) > 0"
+              class="age-badge"
+              :title="t('common.bornIn', { year: b.birth_year })"
+            >{{ b.birth_year }}</span>
           </div>
         </div>
       </div>
@@ -217,6 +234,11 @@ const birthdaysByDay = computed<Record<number, ShareDayItem[]>>(() => {
             class="age-badge"
             :title="t('common.turnsAge', { age: upcomingAgeOf(b) })"
           >{{ t('common.turnsAge', { age: upcomingAgeOf(b) }) }}</span>
+          <span
+            v-if="showYear && (b.birth_year || 0) > 0"
+            class="age-badge"
+            :title="t('common.bornIn', { year: b.birth_year })"
+          >{{ b.birth_year }}</span>
           <span class="muted">{{ b.days_until }}d</span>
         </div>
       </section>
